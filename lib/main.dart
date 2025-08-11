@@ -22,7 +22,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Montserrat', // Varsayılan font
       ),
       home:
-          const ModernLoginScreen(), // Uygulama başladığında giriş ekranı açılacak
+          const BankStyleLoginScreen(), // Uygulama başladığında giriş ekranı açılacak
     );
   }
 }

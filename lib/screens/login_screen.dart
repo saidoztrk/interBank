@@ -1,73 +1,147 @@
 import 'package:flutter/material.dart';
-import 'package:interbank/utils/colors.dart'; // Renk paletimizi import ediyoruz
-import 'home_screen.dart'; // Giriş yapınca gidilecek ekranı import ediyoruz
+import 'home_screen.dart';
 
-class ModernLoginScreen extends StatelessWidget {
-  const ModernLoginScreen({super.key});
+class BankStyleLoginScreen extends StatefulWidget {
+  const BankStyleLoginScreen({super.key});
+
+  @override
+  State<BankStyleLoginScreen> createState() => _BankStyleLoginScreenState();
+}
+
+class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  void _login() {
+    String username = _usernameController.text.trim();
+    String password = _passwordController.text.trim();
+
+    if (username == "intertech" && password == "123456") {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Kullanıcı adı veya şifre hatalı!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blue[50],
-      body: SafeArea(
+      body: SingleChildScrollView(
+        // Kaydırılabilir yapıldı
         child: Column(
           children: [
-            const SizedBox(height: 30),
-            // Profil ve Hoş Geldiniz
-            Column(
-              children: const [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white,
-                  child:
-                      Icon(Icons.person_outline, size: 50, color: Colors.blue),
+            // ÜST MAVİ ALAN
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(vertical: 30), // biraz küçültüldü
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-                SizedBox(height: 10),
-                Text(
-                  "Hoş Geldiniz!",
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(30),
                 ),
-                Text(
-                  "Muhammed Said Öztürk",
-                  style: TextStyle(fontSize: 16, color: Colors.black54),
-                ),
-              ],
+              ),
+              child: Column(
+                children: [
+                  const CircleAvatar(
+                    radius: 35, // küçültüldü
+                    backgroundColor: Colors.white,
+                    child: Icon(Icons.person_outline,
+                        size: 45, color: Colors.blue),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Hoş Geldiniz!",
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18, // küçültüldü
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    "TEAM 1", // değiştirildi
+                    style: TextStyle(color: Colors.white70, fontSize: 15),
+                  ),
+                  const SizedBox(height: 15),
+                  ElevatedButton(
+                    onPressed: _login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.blue,
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 40), // küçültüldü
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text(
+                      "GİRİŞ YAP",
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {},
+                    child: const Text(
+                      "Farklı Kullanıcı ile Giriş Yapın",
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 20),
-            // Giriş Butonu
+
+            // KULLANICI ADI & ŞİFRE ALANI
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              padding: const EdgeInsets.all(14.0), // küçültüldü
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _usernameController,
+                    decoration: InputDecoration(
+                      labelText: "Kullanıcı Adı",
+                      prefixIcon:
+                          const Icon(Icons.person_outline, color: Colors.blue),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
-                onPressed: () {},
-                child: const Center(
-                  child: Text(
-                    "GİRİŞ YAPIN",
-                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: "Şifre",
+                      prefixIcon:
+                          const Icon(Icons.lock_outline, color: Colors.blue),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-            TextButton(
-              onPressed: () {},
-              child: const Text(
-                "Farklı Kullanıcı ile Giriş Yapın",
-                style: TextStyle(color: Colors.blue),
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Kampanya Kartları
+
+            // KAMPANYA KARTLARI
             SizedBox(
-              height: 110,
+              height: 100, // küçültüldü
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 children: [
                   _buildCampaignCard(
                       "%45 Hoş Geldin Faizi", Icons.percent, Colors.orange),
@@ -80,10 +154,12 @@ class ModernLoginScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const Spacer(),
-            // Alt Menü
+
+            const SizedBox(height: 10), // boşluk eklendi
+
+            // ALT MENÜ
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -97,13 +173,11 @@ class ModernLoginScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: const [
-                  _BottomMenuItem(
-                      icon: Icons.flash_on, label: "FAST İşlemleri"),
-                  _BottomMenuItem(icon: Icons.assignment, label: "Başvurular"),
+                  _BottomMenuItem(icon: Icons.flash_on, label: "FAST"),
+                  _BottomMenuItem(icon: Icons.assignment, label: "Başvuru"),
                   _BottomMenuItem(icon: Icons.menu, label: "Menü"),
-                  _BottomMenuItem(
-                      icon: Icons.home_work, label: "Şubesiz İşlem"),
-                  _BottomMenuItem(icon: Icons.campaign, label: "Kampanyalar"),
+                  _BottomMenuItem(icon: Icons.home_work, label: "Şubesiz"),
+                  _BottomMenuItem(icon: Icons.campaign, label: "Kampanya"),
                 ],
               ),
             ),
@@ -115,25 +189,25 @@ class ModernLoginScreen extends StatelessWidget {
 
   static Widget _buildCampaignCard(String title, IconData icon, Color color) {
     return Container(
-      width: 140,
-      margin: const EdgeInsets.only(right: 12),
-      padding: const EdgeInsets.all(12),
+      width: 120, // küçültüldü
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 5, offset: Offset(0, 3)),
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
+          Icon(icon, color: color, size: 26),
+          const SizedBox(height: 6),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -151,9 +225,9 @@ class _BottomMenuItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 26, color: Colors.blue),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12)),
+        Icon(icon, size: 24, color: Colors.blue),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 11)),
       ],
     );
   }
