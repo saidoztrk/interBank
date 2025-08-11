@@ -21,7 +21,8 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.grey[50], // Açık gri bir arka plan
         fontFamily: 'Montserrat', // Varsayılan font
       ),
-      home: const LoginScreen(), // Uygulama başladığında giriş ekranı açılacak
+      home:
+          const ModernLoginScreen(), // Uygulama başladığında giriş ekranı açılacak
     );
   }
 }
