@@ -1,6 +1,7 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'home_screen.dart';
+import 'home_screen.dart'; // ✅ doğrudan HomeScreen'e gideceğiz
 
 class BankStyleLoginScreen extends StatefulWidget {
   const BankStyleLoginScreen({super.key});
@@ -18,9 +19,10 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     final password = _passwordController.text.trim();
 
     if (username == "intertech" && password == "123456") {
+      // ✅ Named route yerine doğrudan HomeScreen'e git
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -33,8 +35,14 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
   }
 
   @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Status bar’ı üst maviliğe uydur
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Color(0xFF0D47A1),
@@ -42,14 +50,11 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
       ),
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F9FF),
-        resizeToAvoidBottomInset: true, // klavye açılınca içerik sıkışsın
-
-        // ✅ ALT BAR ARTIK BURADA SABİT
+        resizeToAvoidBottomInset: true,
         bottomNavigationBar: const _BottomBar(),
-
         body: Column(
           children: [
-            // ÜST MAVİ ALAN (status bar ile birleşik görünür)
+            // ÜST MAVİ ALAN
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 40),
@@ -59,9 +64,7 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(30),
-                ),
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
               ),
               child: Column(
                 children: [
@@ -90,20 +93,22 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   ),
                   TextButton(
                     onPressed: () {},
-                    child: const Text("Farklı Kullanıcı ile Giriş Yapın",
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    child: const Text(
+                      "Farklı Kullanıcı ile Giriş Yapın",
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
                   ),
                 ],
               ),
             ),
 
-            // ✅ ORTA İÇERİK — sadece burası kayar
+            // ORTA İÇERİK — kaydırılabilir
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
                   children: [
-                    // KULLANICI ADI & ŞİFRE ALANI
+                    // KULLANICI ADI & ŞİFRE
                     Padding(
                       padding: const EdgeInsets.all(14.0),
                       child: Column(
@@ -184,8 +189,11 @@ class _CampaignCard extends StatelessWidget {
         children: [
           Icon(icon, color: color, size: 26),
           const SizedBox(height: 6),
-          Text(title, textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
         ],
       ),
     );
