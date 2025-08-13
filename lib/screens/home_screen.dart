@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'chat_screen.dart'; // Chat ekranını ekledik
 
 class AppColors {
   static const primary = Color(0xFF0077C8); // DenizBank mavisi
@@ -160,6 +161,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   assistantX += details.delta.dx;
                   assistantY += details.delta.dy;
                 });
+              },
+              onTap: () {
+                // 🔹 Asistan ikonuna basıldığında ChatScreen'e git
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ChatScreen()),
+                );
               },
               child: Column(
                 children: [
