@@ -9,7 +9,7 @@ class ChatMessage {
   final String id;
   final String text;
   final Sender sender;
-  final DateTime createdAt;
+  final DateTime createdAt; // timestamp yerine kullanılıyor
 
   ChatMessage({
     required this.id,
