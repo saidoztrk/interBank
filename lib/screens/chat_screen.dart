@@ -61,14 +61,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ---- Connectivity (v6) ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
-    if (_hasConnection != isConnected) {
-      setState(() => _hasConnection = isConnected);
+
+    // Değişim yoksa bir şey yapma
+    if (_hasConnection == isConnected) return;
+
+    setState(() {
+      _hasConnection = isConnected;
+
       if (!isConnected) {
-        _messages
-            .add(ChatMessage.bot('Bağlantı yok', badge: BotBadgeState.error));
-        _scheduleScrollToBottom();
+        // OFFLINE'a düşerken 404_hata.png’li uyarı mesajı
+        _messages.add(
+          ChatMessage.bot('Bağlantı koptu. Çevrimdışıyız.',
+              badge: BotBadgeState.error),
+        );
+      } else {
+        // ONLINE olunca tele_sekreter.png’li “yeniden bağlandık” mesajı
+        _messages.add(
+          ChatMessage.bot(
+              '🔌 Bağlantı geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
+              badge: BotBadgeState.teleSekreter),
+        );
       }
-    }
+    });
+
+    _scheduleScrollToBottom();
   }
 
   Future<void> _checkInitialConnection() async {
