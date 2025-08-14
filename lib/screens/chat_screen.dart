@@ -1,13 +1,12 @@
 // lib/screens/chat_screen.dart
-//
-// Basit sohbet arayüzü.
-// MCP/LLM entegrasyonu için _fakeBotReply yerine gerçek API çağrını kullan.
-// Örn: final reply = await _sendToBackend(text);
-
 import 'package:flutter/material.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
+
 import '../models/message_model.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
+import 'no_connection_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -18,42 +17,65 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [
-    ChatMessage.bot('Hello! How can I help you?'),
+    ChatMessage.bot('Merhaba! Size nasıl yardımcı olabilirim?'),
   ];
 
   final ScrollController _scrollCtrl = ScrollController();
   bool _waitingReply = false;
 
+  bool _hasConnection = true;
+  late StreamSubscription<List<ConnectivityResult>> _subscription;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // İlk frame sonrası alta kay
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+    // Uygulama başladığında ve durum değiştiğinde interneti kontrol et
+    _checkInitialConnection();
+    _subscription =
+        Connectivity().onConnectivityChanged.listen(_updateConnectionStatus);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.dispose();
+    _subscription.cancel();
     super.dispose();
   }
 
-  // Klavye açılıp kapanınca da alta kaydır
   @override
   void didChangeMetrics() {
-    // Biraz gecikme ile, yoksa ölçüler daha oturmamış oluyor
     Future.delayed(const Duration(milliseconds: 50), _scrollToBottom);
   }
 
+  // Bağlantı durumunu güncelleyen metot (List<ConnectivityResult> alacak şekilde güncellendi)
+  void _updateConnectionStatus(List<ConnectivityResult> result) {
+    bool isConnected = !result.contains(ConnectivityResult.none);
+    if (_hasConnection != isConnected) {
+      setState(() {
+        _hasConnection = isConnected;
+      });
+    }
+  }
+
+  // İlk bağlantı kontrolünü yapan metot (List<ConnectivityResult> döndürecek şekilde güncellendi)
+  Future<void> _checkInitialConnection() async {
+    final result = await Connectivity().checkConnectivity();
+    _updateConnectionStatus(result);
+  }
+
   Future<void> _sendUserMessage(String text) async {
+    if (text.trim().isEmpty || !_hasConnection) return;
+
     setState(() {
       _messages.add(ChatMessage.user(text));
       _waitingReply = true;
     });
     _scrollToBottom();
 
-    // TODO: Gerçek backend çağrısı ile değiştir
     final reply = await _fakeBotReply(text);
 
     setState(() {
@@ -65,7 +87,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<String> _fakeBotReply(String userText) async {
     await Future.delayed(const Duration(milliseconds: 700));
-    return 'You said: "$userText"';
+    return 'Şunları söyledin: "$userText"';
   }
 
   void _scrollToBottom() {
@@ -79,23 +101,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (!_hasConnection) {
+      return NoConnectionScreen(onRetry: _checkInitialConnection);
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.grey),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: const Text('Asistan'),
-        elevation: 0,
+        title: const Text(
+          'Asistan',
+          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+        ),
+        elevation: 0.5,
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert, color: Colors.grey),
+            onPressed: () {},
+          ),
+        ],
       ),
       body: GestureDetector(
-        // Boş alana dokununca klavyeyi kapat
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
           child: Column(
             children: [
-              // MESAJ LİSTESİ
               Expanded(
                 child: ListView.builder(
                   controller: _scrollCtrl,
@@ -105,25 +140,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   itemCount: _messages.length,
                   itemBuilder: (context, index) {
                     final msg = _messages[index];
-                    final prev = index > 0 ? _messages[index - 1] : null;
-                    final showHeader = msg.sender == Sender.bot &&
-                        (prev == null || prev.sender != Sender.bot);
-
-                    return ChatBubble(
-                      message: msg,
-                      showHeader: showHeader,
-                    );
+                    return ChatBubble(message: msg);
                   },
                 ),
               ),
-
               if (_waitingReply)
                 const Padding(
-                  padding: EdgeInsets.only(bottom: 6),
+                  padding: EdgeInsets.only(left: 18, bottom: 6),
                   child: _TypingIndicator(),
                 ),
-
-              // MESAJ GİRİŞ ALANI
               MessageInput(
                 enabled: !_waitingReply,
                 onSend: _sendUserMessage,
@@ -142,8 +167,8 @@ class _TypingIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        const SizedBox(width: 18),
         CircleAvatar(
           radius: 10,
           backgroundColor: Colors.grey.shade300,
@@ -156,7 +181,10 @@ class _TypingIndicator extends StatelessWidget {
             color: Colors.grey.shade200,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text('typing...'),
+          child: const Text(
+            'yazıyor...',
+            style: TextStyle(fontSize: 14, color: Colors.black87),
+          ),
         ),
       ],
     );
