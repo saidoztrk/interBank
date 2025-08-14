@@ -8,7 +8,20 @@ plugins {
 android {
     namespace = "com.example.interbank"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+
+    // connectivity_plus uyarısını çözmek için NDK sürümünü sabitle
+    ndkVersion = "27.0.12077973"
+
+    defaultConfig {
+        // TODO: Kendi benzersiz Application ID'nizi girin.
+        applicationId = "com.example.interbank"
+
+        // Flutter yapı ayarları
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -19,22 +32,19 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
-    defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.interbank"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-    }
-
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Şimdilik debug imzasıyla imzala ki `flutter run --release` çalışsın
             signingConfig = signingConfigs.getByName("debug")
+            // Eğer shrink/proguard kullanacaksan aç:
+            // isMinifyEnabled = true
+            // proguardFiles(
+            //     getDefaultProguardFile("proguard-android-optimize.txt"),
+            //     "proguard-rules.pro"
+            // )
+        }
+        debug {
+            // Gerekirse debug ayarları
         }
     }
 }

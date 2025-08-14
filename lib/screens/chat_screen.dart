@@ -1,9 +1,10 @@
 // lib/screens/chat_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:async';
 
 import '../models/message_model.dart';
+import '../models/bot_badge_state.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
@@ -21,18 +22,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   ];
 
   final ScrollController _scrollCtrl = ScrollController();
-  bool _waitingReply = false;
 
+  bool _waitingReply = false;
   bool _hasConnection = true;
+
   late StreamSubscription<List<ConnectivityResult>> _subscription;
+
+  // Scroll titremesini önlemek için planlı (throttled) kaydırma
+  bool _scrollScheduled = false;
+
+  // Pastel renkler
+  static const _pastelBg = Color(0xFFF7F9FC); // arka plan
+  static const _pastelPrimary = Color(0xFF8AB4F8); // user bubble rengi
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    // Uygulama başladığında ve durum değiştiğinde interneti kontrol et
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleScrollToBottom();
+      _precacheBotAssets();
+    });
+
     _checkInitialConnection();
     _subscription =
         Connectivity().onConnectivityChanged.listen(_updateConnectionStatus);
@@ -46,43 +58,96 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  @override
-  void didChangeMetrics() {
-    Future.delayed(const Duration(milliseconds: 50), _scrollToBottom);
-  }
-
-  // Bağlantı durumunu güncelleyen metot (List<ConnectivityResult> alacak şekilde güncellendi)
-  void _updateConnectionStatus(List<ConnectivityResult> result) {
-    bool isConnected = !result.contains(ConnectivityResult.none);
+  // ---- Connectivity (v6) ----
+  void _updateConnectionStatus(List<ConnectivityResult> results) {
+    final isConnected = results.any((r) => r != ConnectivityResult.none);
     if (_hasConnection != isConnected) {
-      setState(() {
-        _hasConnection = isConnected;
-      });
+      setState(() => _hasConnection = isConnected);
+      if (!isConnected) {
+        _messages
+            .add(ChatMessage.bot('Bağlantı yok', badge: BotBadgeState.error));
+        _scheduleScrollToBottom();
+      }
     }
   }
 
-  // İlk bağlantı kontrolünü yapan metot (List<ConnectivityResult> döndürecek şekilde güncellendi)
   Future<void> _checkInitialConnection() async {
-    final result = await Connectivity().checkConnectivity();
-    _updateConnectionStatus(result);
+    final results = await Connectivity().checkConnectivity();
+    _updateConnectionStatus(results);
   }
 
-  Future<void> _sendUserMessage(String text) async {
-    if (text.trim().isEmpty || !_hasConnection) return;
+  // ---- UI helpers ----
+  Future<void> _precacheBotAssets() async {
+    const assets = [
+      'lib/assets/images/chatbot/tele_sekreter.png', // default
+      'lib/assets/images/chatbot/thinking.png', // düşünürken
+      'lib/assets/images/chatbot/404_hata.png', // ağ hatası
+    ];
+    for (final a in assets) {
+      precacheImage(AssetImage(a), context);
+    }
+  }
 
+  void _scheduleScrollToBottom() {
+    if (_scrollScheduled) return;
+    _scrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollScheduled = false;
+      if (!_scrollCtrl.hasClients) return;
+      final target = _scrollCtrl.position.maxScrollExtent;
+      if ((target - _scrollCtrl.position.pixels).abs() < 2) return;
+      _scrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  // ---- Messaging ----
+  Future<void> _sendUserMessage(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+
+    if (!_hasConnection) {
+      setState(() {
+        _messages.add(ChatMessage.user(trimmed));
+        _messages.add(ChatMessage.bot(
+          'Ağ hatası: çevrimdışısın.',
+          badge: BotBadgeState.error, // 404_hata.png
+        ));
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+
+    // Titremesiz: sadece user mesajını ekle + typing item'ı listede göstereceğiz
     setState(() {
-      _messages.add(ChatMessage.user(text));
+      _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
     });
-    _scrollToBottom();
+    _scheduleScrollToBottom();
 
-    final reply = await _fakeBotReply(text);
+    try {
+      // TODO: gerçek backend çağrını buraya koy
+      final reply = await _fakeBotReply(trimmed);
 
-    setState(() {
-      _messages.add(ChatMessage.bot(reply));
-      _waitingReply = false;
-    });
-    _scrollToBottom();
+      setState(() {
+        _messages.add(ChatMessage.bot(reply,
+            badge: BotBadgeState.teleSekreter)); // default rozet
+        _waitingReply = false; // typing kalkar
+      });
+      _scheduleScrollToBottom();
+    } catch (_) {
+      setState(() {
+        _messages.add(ChatMessage.bot(
+          'Ağ hatası oluştu. Lütfen tekrar dener misin?',
+          badge: BotBadgeState.error,
+        ));
+        _waitingReply = false;
+      });
+      _scheduleScrollToBottom();
+    }
   }
 
   Future<String> _fakeBotReply(String userText) async {
@@ -90,72 +155,84 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return 'Şunları söyledin: "$userText"';
   }
 
-  void _scrollToBottom() {
-    if (!_scrollCtrl.hasClients) return;
-    _scrollCtrl.animateTo(
-      _scrollCtrl.position.maxScrollExtent + 80,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
-  }
-
+  // ---- Build ----
   @override
   Widget build(BuildContext context) {
-    if (!_hasConnection) {
-      return NoConnectionScreen(onRetry: _checkInitialConnection);
-    }
+    // ChatBubble user rengi Theme.primaryColor'dan aldığı için burada pastel primary veriyoruz.
+    final theme = Theme.of(context).copyWith(
+      primaryColor: _pastelPrimary,
+      colorScheme:
+          Theme.of(context).colorScheme.copyWith(primary: _pastelPrimary),
+    );
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.grey),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: const Text(
-          'Asistan',
-          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
-        ),
-        elevation: 0.5,
-        backgroundColor: Colors.white,
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.grey),
-            onPressed: () {},
+    return Theme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: _pastelBg,
+        appBar: AppBar(
+          elevation: 0.5,
+          centerTitle: true,
+          backgroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.grey),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              } else {
+                Navigator.pushReplacementNamed(context, '/home');
+              }
+            },
           ),
-        ],
-      ),
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollCtrl,
-                  padding: const EdgeInsets.only(bottom: 8),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _messages[index];
-                    return ChatBubble(message: msg);
-                  },
+          title: const Text(
+            'Asistan',
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              onPressed: () {},
+            ),
+          ],
+        ),
+        body: !_hasConnection
+            ? NoConnectionScreen(onRetry: _checkInitialConnection)
+            : GestureDetector(
+                onTap: () => FocusScope.of(context).unfocus(),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _scrollCtrl,
+                          physics: const ClampingScrollPhysics(),
+                          padding: const EdgeInsets.only(bottom: 8),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          // Typing indicator'ı da liste elemanı olarak ekle
+                          itemCount: _messages.length + (_waitingReply ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            final bool typingItem =
+                                _waitingReply && index == _messages.length;
+                            if (typingItem) {
+                              // DÜŞÜNÜRKEN: thinking.png
+                              return const Padding(
+                                padding: EdgeInsets.only(left: 18, bottom: 6),
+                                child: _TypingIndicator(),
+                              );
+                            }
+                            final msg = _messages[index];
+                            return ChatBubble(message: msg);
+                          },
+                        ),
+                      ),
+                      MessageInput(
+                        enabled: !_waitingReply,
+                        onSend: _sendUserMessage,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              if (_waitingReply)
-                const Padding(
-                  padding: EdgeInsets.only(left: 18, bottom: 6),
-                  child: _TypingIndicator(),
-                ),
-              MessageInput(
-                enabled: !_waitingReply,
-                onSend: _sendUserMessage,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -168,25 +245,41 @@ class _TypingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
-      children: [
+      children: const [
+        // DÜŞÜNÜRKEN: thinking.png
         CircleAvatar(
-          radius: 10,
-          backgroundColor: Colors.grey.shade300,
-          child: const Icon(Icons.smart_toy, size: 12, color: Colors.black54),
+          radius: 21, // 1.5x büyütülmüş
+          backgroundColor: Colors.transparent,
+          backgroundImage: AssetImage('lib/assets/images/chatbot/thinking.png'),
         ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Text(
-            'yazıyor...',
-            style: TextStyle(fontSize: 14, color: Colors.black87),
-          ),
-        ),
+        SizedBox(width: 10),
+        _TypingBubble(),
       ],
+    );
+  }
+}
+
+class _TypingBubble extends StatelessWidget {
+  const _TypingBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white, // pastel zeminde hafif balon
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x11000000), blurRadius: 3, offset: Offset(0, 1)),
+        ],
+      ),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Text(
+          'yazıyor...',
+          style: TextStyle(fontSize: 14, color: Colors.black87),
+        ),
+      ),
     );
   }
 }

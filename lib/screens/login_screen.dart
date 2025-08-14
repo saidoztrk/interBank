@@ -1,7 +1,5 @@
-// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'home_screen.dart'; // ✅ doğrudan HomeScreen'e gideceğiz
 
 class BankStyleLoginScreen extends StatefulWidget {
   const BankStyleLoginScreen({super.key});
@@ -19,11 +17,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     final password = _passwordController.text.trim();
 
     if (username == "intertech" && password == "123456") {
-      // ✅ Named route yerine doğrudan HomeScreen'e git
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      // Başarılı giriş -> Home
+      Navigator.pushReplacementNamed(context, '/home');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -64,32 +59,42 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+                borderRadius:
+                    BorderRadius.vertical(bottom: Radius.circular(30)),
               ),
               child: Column(
                 children: [
                   const CircleAvatar(
                     radius: 35,
                     backgroundColor: Colors.white,
-                    child: Icon(Icons.person_outline, size: 45, color: Colors.blue),
+                    child: Icon(Icons.person_outline,
+                        size: 45, color: Colors.blue),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     "Hoş Geldiniz!",
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
                   ),
-                  const Text("TEAM 1", style: TextStyle(color: Colors.white70, fontSize: 15)),
+                  const Text("TEAM 1",
+                      style: TextStyle(color: Colors.white70, fontSize: 15)),
                   const SizedBox(height: 15),
                   ElevatedButton(
                     onPressed: _login,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.blue,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 40),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 40),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       elevation: 3,
                     ),
-                    child: const Text("GİRİŞ YAP", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    child: const Text("GİRİŞ YAP",
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   TextButton(
                     onPressed: () {},
@@ -117,10 +122,12 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                             controller: _usernameController,
                             decoration: InputDecoration(
                               labelText: "Kullanıcı Adı",
-                              prefixIcon: const Icon(Icons.person_outline, color: Colors.blue),
+                              prefixIcon: const Icon(Icons.person_outline,
+                                  color: Colors.blue),
                               filled: true,
                               fillColor: Colors.white,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -129,10 +136,12 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                             obscureText: true,
                             decoration: InputDecoration(
                               labelText: "Şifre",
-                              prefixIcon: const Icon(Icons.lock_outline, color: Colors.blue),
+                              prefixIcon: const Icon(Icons.lock_outline,
+                                  color: Colors.blue),
                               filled: true,
                               fillColor: Colors.white,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ],
@@ -146,10 +155,22 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         children: const [
-                          _CampaignCard(title: "%45 Hoş Geldin Faizi", icon: Icons.percent, color: Color(0xFFFFB020)),
-                          _CampaignCard(title: "2,99 Faiz Fırsatı", icon: Icons.trending_down, color: Color(0xFF17B26A)),
-                          _CampaignCard(title: "Kredi Notunu Gör", icon: Icons.analytics, color: Color(0xFF7A5AF8)),
-                          _CampaignCard(title: "Güvence Yanınızda", icon: Icons.verified, color: Color(0xFF2D7DFF)),
+                          _CampaignCard(
+                              title: "%45 Hoş Geldin Faizi",
+                              icon: Icons.percent,
+                              color: Color(0xFFFFB020)),
+                          _CampaignCard(
+                              title: "2,99 Faiz Fırsatı",
+                              icon: Icons.trending_down,
+                              color: Color(0xFF17B26A)),
+                          _CampaignCard(
+                              title: "Kredi Notunu Gör",
+                              icon: Icons.analytics,
+                              color: Color(0xFF7A5AF8)),
+                          _CampaignCard(
+                              title: "Güvence Yanınızda",
+                              icon: Icons.verified,
+                              color: Color(0xFF2D7DFF)),
                         ],
                       ),
                     ),
@@ -166,12 +187,12 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 }
 
 // ---- Bileşenler ----
-
 class _CampaignCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Color color;
-  const _CampaignCard({required this.title, required this.icon, required this.color});
+  const _CampaignCard(
+      {required this.title, required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +203,9 @@ class _CampaignCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
+        ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -209,7 +232,9 @@ class _BottomBar extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5, offset: Offset(0, -2))],
+        boxShadow: [
+          BoxShadow(color: Colors.black12, blurRadius: 5, offset: Offset(0, -2))
+        ],
       ),
       child: const Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,

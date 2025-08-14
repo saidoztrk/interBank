@@ -1,98 +1,52 @@
-// lib/widgets/chat_bubble.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/message_model.dart';
+import 'chat_bot_badge.dart';
 
 class ChatBubble extends StatelessWidget {
-  const ChatBubble({
-    super.key,
-    required this.message,
-    this.showHeader = false,
-  });
-
+  const ChatBubble({super.key, required this.message});
   final ChatMessage message;
-  final bool showHeader;
+
+  bool get isBot => message.sender == Sender.bot;
 
   @override
   Widget build(BuildContext context) {
-    final bool isUser = message.sender == Sender.user;
-    final Color bubbleColor =
-        isUser ? Colors.blue.shade600 : Colors.grey.shade200;
-    final Color textColor = isUser ? Colors.white : Colors.black87;
-    final Alignment alignment =
-        isUser ? Alignment.centerRight : Alignment.centerLeft;
+    final bubble = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      constraints: const BoxConstraints(maxWidth: 320),
+      decoration: BoxDecoration(
+        color: isBot ? const Color(0xFFF2F4F7) : Theme.of(context).primaryColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        message.text,
+        style: TextStyle(
+          color: isBot ? Colors.black87 : Colors.white,
+          height: 1.25,
+        ),
+      ),
+    );
 
-    final BorderRadius borderRadius = isUser
-        ? const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(4),
-          )
-        : const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
-          );
-
-    // Zaman damgası güvenli şekilde hazırlanıyor
-    final String timeText = DateFormat.Hm().format(message.createdAt);
+    if (!isBot) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
 
     return Align(
-      alignment: alignment,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: borderRadius,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 3,
-              offset: const Offset(0, 1),
+      alignment: Alignment.centerLeft,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            // rozet büyüdüğü için hafif boşluk arttırdık
+            padding: const EdgeInsets.only(right: 10, top: 1),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              // 28 → 42 (1.5x)
+              child: ChatBotBadge(state: message.badgeState, size: 42),
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            Text(
-              message.text,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 15,
-              ),
-            ),
-            if (isUser)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      timeText,
-                      style: TextStyle(
-                        color: textColor.withOpacity(0.7),
-                        fontSize: 10,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.done_all,
-                      size: 14,
-                      color: textColor.withOpacity(0.7),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+          ),
+          bubble,
+        ],
       ),
     );
   }
