@@ -68,6 +68,7 @@ flutter:
     - lib/assets/images/chatbot/thinking.png
     - lib/assets/images/chatbot/kalpli.png
     - lib/assets/images/chatbot/baglanti.png
+    - lib/assets/images/person/teamwork.png
     
 
   # An image asset can refer to one or more resolution-specific "variants", see
