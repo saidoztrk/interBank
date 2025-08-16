@@ -1,28 +1,25 @@
+// lib/widgets/chat_bot_badge.dart
 import 'package:flutter/material.dart';
 import '../models/bot_badge_state.dart';
 
 class ChatBotBadge extends StatelessWidget {
-  const ChatBotBadge(
-      {super.key, required this.state, this.size = 28}); // 22 -> 28
   final BotBadgeState state;
   final double size;
 
+  const ChatBotBadge({
+    super.key,
+    required this.state,
+    this.size = 42, // varsayılan 42 (1.5x büyütme için ideal)
+  });
+
   @override
   Widget build(BuildContext context) {
-    final String wanted = state.asset;
-    const String fallback = 'lib/assets/images/chatbot/tele_sekreter.png';
-
-    return SizedBox(
+    return Image.asset(
+      state.asset, // enum extension’dan geliyor
       width: size,
       height: size,
-      child: Image.asset(
-        wanted,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (_, __, ___) =>
-            Image.asset(fallback, fit: BoxFit.contain),
-      ),
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
     );
   }
 }

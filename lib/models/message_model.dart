@@ -18,7 +18,7 @@ class ChatMessage {
     required this.id,
     required this.text,
     required this.sender,
-    this.badgeState = BotBadgeState.teleSekreter, // <— default: teleSekreter
+    this.badgeState = BotBadgeState.sekreter, // varsayılan rozet
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -29,10 +29,10 @@ class ChatMessage {
         sender: Sender.user,
       );
 
-  /// Bot mesajı oluşturucu — varsayılan rozet tele_sekreter
+  /// Bot mesajı oluşturucu — varsayılan rozet sekreter
   factory ChatMessage.bot(
     String text, {
-    BotBadgeState badge = BotBadgeState.teleSekreter, // <— burada da default
+    BotBadgeState badge = BotBadgeState.sekreter,
   }) =>
       ChatMessage(
         id: _uuid.v4(),
@@ -61,7 +61,8 @@ class ChatMessage {
         'id': id,
         'text': text,
         'sender': sender.name, // 'user' / 'bot'
-        'badgeState': badgeState.name, // 'teleSekreter' / 'thinking' / 'error'
+        'badgeState': badgeState
+            .name, // 'normal' / 'thinking' / 'writing' / 'connection' / 'noConnection' / 'sekreter'
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -69,15 +70,15 @@ class ChatMessage {
     final senderStr = (json['sender'] as String?)?.toLowerCase();
     final sender = senderStr == 'user' ? Sender.user : Sender.bot;
 
-    final badgeStr = (json['badgeState'] as String?) ?? 'teleSekreter';
+    final badgeStr = (json['badgeState'] as String?) ?? 'sekreter';
     final badge = BotBadgeState.values.firstWhere(
       (e) => e.name == badgeStr,
-      orElse: () => BotBadgeState.teleSekreter,
+      orElse: () => BotBadgeState.sekreter,
     );
 
     return ChatMessage(
-      id: json['id'] as String,
-      text: json['text'] as String,
+      id: json['id'] as String? ?? _uuid.v4(),
+      text: json['text'] as String? ?? '',
       sender: sender,
       badgeState: badge,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??

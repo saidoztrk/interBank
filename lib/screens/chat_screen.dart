@@ -18,7 +18,8 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [
-    ChatMessage.bot('Merhaba! Size nasıl yardımcı olabilirim?'),
+    ChatMessage.bot('Merhaba! Size nasıl yardımcı olabilirim?',
+        badge: BotBadgeState.sekreter),
   ];
 
   final ScrollController _scrollCtrl = ScrollController();
@@ -28,7 +29,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
 
-  // Scroll titremesini önlemek için planlı (throttled) kaydırma
+  // Scroll titremesini azaltmak için basit throttle
   bool _scrollScheduled = false;
 
   // Pastel renkler
@@ -62,24 +63,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
 
-    // Değişim yoksa bir şey yapma
     if (_hasConnection == isConnected) return;
 
     setState(() {
       _hasConnection = isConnected;
 
       if (!isConnected) {
-        // OFFLINE'a düşerken 404_hata.png’li uyarı mesajı
-        _messages.add(
-          ChatMessage.bot('Bağlantı koptu. Çevrimdışıyız.',
-              badge: BotBadgeState.error),
-        );
-      } else {
-        // ONLINE olunca tele_sekreter.png’li “yeniden bağlandık” mesajı
+        // OFFLINE: captain_noconnection.png
         _messages.add(
           ChatMessage.bot(
-              '🔌 Bağlantı geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
-              badge: BotBadgeState.teleSekreter),
+            'Bağlantı koptu. Çevrimdışısın.',
+            badge: BotBadgeState.noConnection,
+          ),
+        );
+      } else {
+        // ONLINE: captain_connection.png
+        _messages.add(
+          ChatMessage.bot(
+            'Wi-Fi geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
+            badge: BotBadgeState.connection,
+          ),
         );
       }
     });
@@ -92,14 +95,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _updateConnectionStatus(results);
   }
 
-  // ---- UI helpers ----
   Future<void> _precacheBotAssets() async {
     const assets = [
-      'lib/assets/images/chatbot/tele_sekreter.png', // default
-      'lib/assets/images/chatbot/thinking.png', // düşünürken
-      'lib/assets/images/chatbot/404_hata.png', // ağ hatası
+      'lib/assets/images/captain/captain.png',
+      'lib/assets/images/captain/captain_thinking.png',
+      'lib/assets/images/captain/captain_writing.png',
+      'lib/assets/images/captain/captain_connection.png',
+      'lib/assets/images/captain/captain_noconnection.png',
     ];
     for (final a in assets) {
+      // const KALDIRILDI
       precacheImage(AssetImage(a), context);
     }
   }
@@ -130,14 +135,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(ChatMessage.bot(
           'Ağ hatası: çevrimdışısın.',
-          badge: BotBadgeState.error, // 404_hata.png
+          badge: BotBadgeState.noConnection,
         ));
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // Titremesiz: sadece user mesajını ekle + typing item'ı listede göstereceğiz
     setState(() {
       _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
@@ -149,16 +153,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final reply = await _fakeBotReply(trimmed);
 
       setState(() {
-        _messages.add(ChatMessage.bot(reply,
-            badge: BotBadgeState.teleSekreter)); // default rozet
-        _waitingReply = false; // typing kalkar
+        _messages.add(
+          ChatMessage.bot(
+            reply,
+            badge: BotBadgeState.sekreter, // varsayılan rozet
+          ),
+        );
+        _waitingReply = false;
       });
       _scheduleScrollToBottom();
     } catch (_) {
       setState(() {
         _messages.add(ChatMessage.bot(
           'Ağ hatası oluştu. Lütfen tekrar dener misin?',
-          badge: BotBadgeState.error,
+          badge: BotBadgeState.noConnection,
         ));
         _waitingReply = false;
       });
@@ -230,7 +238,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             final bool typingItem =
                                 _waitingReply && index == _messages.length;
                             if (typingItem) {
-                              // DÜŞÜNÜRKEN: thinking.png
                               return const Padding(
                                 padding: EdgeInsets.only(left: 18, bottom: 6),
                                 child: _TypingIndicator(),
@@ -262,11 +269,12 @@ class _TypingIndicator extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: const [
-        // DÜŞÜNÜRKEN: thinking.png
+        // Yazıyor: captain_writing.png
         CircleAvatar(
           radius: 21, // 1.5x büyütülmüş
           backgroundColor: Colors.transparent,
-          backgroundImage: AssetImage('lib/assets/images/chatbot/thinking.png'),
+          backgroundImage:
+              AssetImage('lib/assets/images/captain/captain_writing.png'),
         ),
         SizedBox(width: 10),
         _TypingBubble(),
@@ -286,7 +294,10 @@ class _TypingBubble extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x11000000), blurRadius: 3, offset: Offset(0, 1)),
+            color: Color(0x11000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
         ],
       ),
       child: const Padding(

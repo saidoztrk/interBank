@@ -69,8 +69,27 @@ flutter:
     - lib/assets/images/chatbot/kalpli.png
     - lib/assets/images/chatbot/baglanti.png
     - lib/assets/images/person/teamwork.png
-    
 
+    - lib/assets/images/captain/
+    - lib/assets/images/captain/captain.png
+    - lib/assets/images/captain/captain_writing.png
+    - lib/assets/images/captain/captain_thinking.png
+    - lib/assets/images/captain/captain_sekreter.png
+    - lib/assets/images/captain/captain_noconnection.png
+    - lib/assets/images/captain/captain_connection.png
+
+    - lib/assets/images/captain/hat/
+    - lib/assets/images/captain/hat/hat_idle.png
+    - lib/assets/images/captain/hat/hat_peek_0.png
+    - lib/assets/images/captain/hat/hat_peek_1.png
+    - lib/assets/images/captain/hat/hat_peek_2.png
+    - lib/assets/images/captain/hat/hat_peek_3.png
+
+    - lib/assets/images/captain/home/
+    - lib/assets/images/captain/home/apps.png
+    - lib/assets/images/captain/home/home.png
+    - lib/assets/images/captain/home/pay.png
+    - lib/assets/images/captain/home/send.png
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
