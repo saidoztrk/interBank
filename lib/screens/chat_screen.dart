@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/message_model.dart';
-import '../models/bot_badge_state.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
@@ -18,22 +17,18 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [
-    ChatMessage.bot('Merhaba! Size nasıl yardımcı olabilirim?'),
+    ChatMessage.bot('Kaptanınız konuşuyor! Size nasıl yardımcı olabilirim?'),
   ];
 
   final ScrollController _scrollCtrl = ScrollController();
-
   bool _waitingReply = false;
   bool _hasConnection = true;
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
-
-  // Scroll titremesini önlemek için planlı (throttled) kaydırma
   bool _scrollScheduled = false;
 
-  // Pastel renkler
-  static const _pastelBg = Color(0xFFF7F9FC); // arka plan
-  static const _pastelPrimary = Color(0xFF8AB4F8); // user bubble rengi
+  static const _pastelBg = Color(0xFFF7F9FC);
+  static const _pastelPrimary = Color(0xFF8AB4F8);
 
   @override
   void initState() {
@@ -58,30 +53,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ---- Connectivity (v6) ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
-
-    // Değişim yoksa bir şey yapma
     if (_hasConnection == isConnected) return;
 
     setState(() {
       _hasConnection = isConnected;
-
-      if (!isConnected) {
-        // OFFLINE'a düşerken 404_hata.png’li uyarı mesajı
-        _messages.add(
-          ChatMessage.bot('Bağlantı koptu. Çevrimdışıyız.',
-              badge: BotBadgeState.error),
-        );
-      } else {
-        // ONLINE olunca tele_sekreter.png’li “yeniden bağlandık” mesajı
-        _messages.add(
-          ChatMessage.bot(
-              '🔌 Bağlantı geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
-              badge: BotBadgeState.teleSekreter),
-        );
-      }
+      _messages.add(
+        ChatMessage.bot(
+          isConnected
+              ? '🔌 Bağlantı geri geldi! Kaldığımız yerden devam edebiliriz. 🙌'
+              : 'Bağlantı koptu. Çevrimdışıyız.',
+        ),
+      );
     });
 
     _scheduleScrollToBottom();
@@ -92,16 +76,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _updateConnectionStatus(results);
   }
 
-  // ---- UI helpers ----
   Future<void> _precacheBotAssets() async {
-    const assets = [
-      'lib/assets/images/chatbot/tele_sekreter.png', // default
-      'lib/assets/images/chatbot/thinking.png', // düşünürken
-      'lib/assets/images/chatbot/404_hata.png', // ağ hatası
-    ];
-    for (final a in assets) {
-      precacheImage(AssetImage(a), context);
-    }
+    const asset = 'lib/assets/images/chatbot/icons8-captain-48.png';
+    precacheImage(const AssetImage(asset), context);
   }
 
   void _scheduleScrollToBottom() {
@@ -120,7 +97,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  // ---- Messaging ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -128,16 +104,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!_hasConnection) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
-        _messages.add(ChatMessage.bot(
-          'Ağ hatası: çevrimdışısın.',
-          badge: BotBadgeState.error, // 404_hata.png
-        ));
+        _messages.add(ChatMessage.bot('Ağ hatası: çevrimdışısın.'));
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // Titremesiz: sadece user mesajını ekle + typing item'ı listede göstereceğiz
     setState(() {
       _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
@@ -145,25 +117,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scheduleScrollToBottom();
 
     try {
-      // TODO: gerçek backend çağrını buraya koy
       final reply = await _fakeBotReply(trimmed);
-
       setState(() {
-        _messages.add(ChatMessage.bot(reply,
-            badge: BotBadgeState.teleSekreter)); // default rozet
-        _waitingReply = false; // typing kalkar
+        _messages.add(ChatMessage.bot(reply));
+        _waitingReply = false;
       });
-      _scheduleScrollToBottom();
     } catch (_) {
       setState(() {
         _messages.add(ChatMessage.bot(
-          'Ağ hatası oluştu. Lütfen tekrar dener misin?',
-          badge: BotBadgeState.error,
-        ));
+            'Ağ hatası oluştu. Lütfen tekrar dener misin?'));
         _waitingReply = false;
       });
-      _scheduleScrollToBottom();
     }
+    _scheduleScrollToBottom();
   }
 
   Future<String> _fakeBotReply(String userText) async {
@@ -171,10 +137,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return 'Şunları söyledin: "$userText"';
   }
 
-  // ---- Build ----
   @override
   Widget build(BuildContext context) {
-    // ChatBubble user rengi Theme.primaryColor'dan aldığı için burada pastel primary veriyoruz.
     final theme = Theme.of(context).copyWith(
       primaryColor: _pastelPrimary,
       colorScheme:
@@ -190,7 +154,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           centerTitle: true,
           backgroundColor: Colors.white,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.grey),
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF2196F3)),
             onPressed: () {
               if (Navigator.canPop(context)) {
                 Navigator.pop(context);
@@ -200,12 +164,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
           ),
           title: const Text(
-            'Asistan',
-            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+            'Kaptan',
+            style: TextStyle(
+                color: Color(0xFF2196F3),
+                fontWeight: FontWeight.w600,
+                fontSize: 18),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              icon: const Icon(Icons.more_vert, color: Color(0xFF2196F3)),
               onPressed: () {},
             ),
           ],
@@ -224,26 +191,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           padding: const EdgeInsets.only(bottom: 8),
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          // Typing indicator'ı da liste elemanı olarak ekle
                           itemCount: _messages.length + (_waitingReply ? 1 : 0),
                           itemBuilder: (context, index) {
-                            final bool typingItem =
+                            final typingItem =
                                 _waitingReply && index == _messages.length;
                             if (typingItem) {
-                              // DÜŞÜNÜRKEN: thinking.png
                               return const Padding(
                                 padding: EdgeInsets.only(left: 18, bottom: 6),
                                 child: _TypingIndicator(),
                               );
                             }
-                            final msg = _messages[index];
-                            return ChatBubble(message: msg);
+                            return ChatBubble(message: _messages[index]);
                           },
                         ),
                       ),
                       MessageInput(
                         enabled: !_waitingReply,
                         onSend: _sendUserMessage,
+                        
                       ),
                     ],
                   ),
@@ -260,13 +225,12 @@ class _TypingIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
       children: const [
-        // DÜŞÜNÜRKEN: thinking.png
         CircleAvatar(
-          radius: 21, // 1.5x büyütülmüş
+          radius: 21,
           backgroundColor: Colors.transparent,
-          backgroundImage: AssetImage('lib/assets/images/chatbot/thinking.png'),
+          backgroundImage:
+              AssetImage('lib/assets/images/chatbot/icons8-captain-48.png'),
         ),
         SizedBox(width: 10),
         _TypingBubble(),
@@ -282,7 +246,7 @@ class _TypingBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white, // pastel zeminde hafif balon
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(

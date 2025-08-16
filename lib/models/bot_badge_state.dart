@@ -10,12 +10,12 @@ extension BotBadgeAsset on BotBadgeState {
   String get asset {
     switch (this) {
       case BotBadgeState.thinking:
-        return 'lib/assets/images/chatbot/thinking.png';
+        return 'lib/assets/images/chatbot/icons8-captain-48.png';
       case BotBadgeState.error:
-        return 'lib/assets/images/chatbot/404_hata.png';
+        return 'lib/assets/images/chatbot/icons8-captain-48.png';
       case BotBadgeState.teleSekreter:
       default:
-        return 'lib/assets/images/chatbot/tele_sekreter.png';
+        return 'lib/assets/images/chatbot/icons8-captain-48.png';
     }
   }
 }

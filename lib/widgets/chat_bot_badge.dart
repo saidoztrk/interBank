@@ -10,7 +10,7 @@ class ChatBotBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String wanted = state.asset;
-    const String fallback = 'lib/assets/images/chatbot/tele_sekreter.png';
+    const String fallback = 'lib/assets/images/chatbot/icons8-captain-48.png';
 
     return SizedBox(
       width: size,

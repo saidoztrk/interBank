@@ -1,5 +1,6 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:gif_view/gif_view.dart';
 
 class AppColors {
   static const background = Color(0xFFF8FAFF);
@@ -18,20 +19,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  // Asistan balonu
-  double assistantX = 200;
-  double assistantY = 500;
-  final double assistantRadius = 34; // balon yarıçapı
-  bool assistantVisible = true;
-
-  // Drag durumları
-  bool _showTrash = false;
-  bool _overTrash = false;
-  bool _dragging = false;
-
-  // Nefes (pulse) animasyonu
+  // Nefes (pulse) animasyonu sadece ortadaki kaptan için
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulse;
+
+  // Kaptan boyutları
+  static const double _captainRadius = 40;                    // yarıçap
+  static const double _captainDiameter = _captainRadius * 2;  // 80 px
 
   @override
   void initState() {
@@ -53,167 +47,104 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final Size size = MediaQuery.of(context).size;
-    final double screenW = size.width;
+    final size = MediaQuery.of(context).size;
     final double screenH = size.height;
-
-    // Çöp kutusu alanı (ekran alt-orta)
-    final double trashSize = 90;
-    final Rect trashRect = Rect.fromCenter(
-      center: Offset(screenW / 2, screenH - 40 - trashSize / 2),
-      width: trashSize,
-      height: trashSize,
-    );
+    final double bottomSafe = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
+        clipBehavior: Clip.none,
         children: [
           // Üst dalgalı pastel header
           _buildWavyHeader(context),
 
-          // İçerik
+          // İçerik (üst başlıktan sonra)
           Padding(
             padding: EdgeInsets.only(top: screenH * 0.27),
             child: Column(
               children: [
                 _buildGreetingCard(),
                 const SizedBox(height: 16),
-                _buildQuickActions(),
+                _buildQuickActions(),  // <-- ÜSTTEKİ SEÇENEKLER KALDI
                 const SizedBox(height: 14),
-                _buildFunStrip(),
+                _buildFunStrip(),      // <-- KARTLAR KALDI
                 const Spacer(),
-                _buildBottomBar(onMenuTap: _openMenuQuickActions),
+                // Alt bar (ortada kaptan için boşluklu)
+                _buildBottomBar(bottomSafe: bottomSafe),
               ],
             ),
           ),
 
-          // Dijital Asistan (sürüklenebilir + pulse)
-          if (assistantVisible)
-            Positioned(
-              left: assistantX,
-              top: assistantY,
-              child: GestureDetector(
-                onPanStart: (_) {
-                  setState(() {
-                    _showTrash = true;
-                    _dragging = true;
-                  });
-                },
-                onPanUpdate: (details) {
-                  setState(() {
-                    assistantX += details.delta.dx;
-                    assistantY += details.delta.dy;
-                    _clampAssistant(size);
-                    // Asistan merkez noktası çöp alanında mı?
-                    final Offset center = Offset(
-                      assistantX + assistantRadius,
-                      assistantY + assistantRadius,
-                    );
-                    _overTrash = trashRect.contains(center);
-                  });
-                },
-                onPanEnd: (_) {
-                  if (_overTrash) {
-                    setState(() {
-                      assistantVisible = false;
-                      _showTrash = false;
-                      _overTrash = false;
-                      _dragging = false;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                            'Asistan gizlendi. Menüden tekrar açabilirsiniz.'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  } else {
-                    setState(() {
-                      _showTrash = false;
-                      _overTrash = false;
-                      _dragging = false;
-                    });
-                  }
-                },
-                onTap: () => Navigator.pushNamed(context, '/chat'),
-                child: AnimatedBuilder(
+          // Ortadaki büyük Kaptan butonu (sabit, alt barda ortalanmış)
+          Positioned(
+            left: 0,
+            right: 0,
+            // Alt bara yarı taşacak şekilde, overflow riskini azaltan formül
+            bottom: bottomSafe + (62 - _captainDiameter / 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedBuilder(
                   animation: _pulse,
-                  builder: (context, child) {
-                    final scale = _dragging ? 1.0 : _pulse.value;
-                    return Transform.scale(
-                      scale: scale,
-                      child: child,
-                    );
-                  },
-                  child: Column(
-                    children: [
-                      // Gölge + dairesel avatar (içerik contain + padding)
-                      Container(
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 6,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: _assistantBubbleImage(radius: assistantRadius),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        "Asistan",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ],
+                  builder: (context, child) => Transform.scale(
+                    scale: _pulse.value,
+                    child: child,
                   ),
-                ),
-              ),
-            ),
-
-          // Çöp kutusu overlay (drag sırasında)
-          if (_showTrash)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: trashSize,
-                  height: trashSize,
-                  decoration: BoxDecoration(
-                    color: _overTrash ? Colors.red : Colors.black12,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _overTrash ? Colors.redAccent : Colors.black26,
-                      width: 2,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pushNamed(context, '/chat'),
+                    child: Container(
+                      width: _captainDiameter,
+                      height: _captainDiameter,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                      child: ClipOval(
+                        child: GifView.asset(
+                          'lib/assets/gifs/rudder.gif',
+                          frameRate: 24,
+                        ),
+                      ),
                     ),
                   ),
-                  child: Icon(
-                    Icons.delete,
-                    size: 36,
-                    color: _overTrash ? Colors.white : Colors.black54,
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Kaptan",
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,      // daha kalın
+                    color: AppColors.primary,          // mavi
+                    letterSpacing: .2,
                   ),
                 ),
-              ),
+              ],
             ),
+          ),
         ],
       ),
     );
   }
 
-  // Dalgalı başlık alanı
+  // Dalgalı başlık alanı (çentik uyumlu)
   Widget _buildWavyHeader(BuildContext context) {
     return ClipPath(
       clipper: _BottomWaveClipper(),
       child: Container(
-        height: 260,
+        height: 240,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppColors.primary, AppColors.primary2],
@@ -239,24 +170,27 @@ class _HomeScreenState extends State<HomeScreen>
               right: 40,
               child: _bubble(28, Colors.white.withOpacity(.14)),
             ),
-            // başlık içerik
-            Padding(
-              padding: const EdgeInsets.only(top: 54, left: 20, right: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Icon(Icons.menu, color: Colors.white),
-                  Text(
-                    "İnterBank",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 20,
-                      letterSpacing: .2,
+            // başlık içerik — SafeArea ile çentik uyumlu
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20).copyWith(top: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Icon(Icons.menu, color: Colors.white),
+                    Text(
+                      "İnterBank",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                        letterSpacing: .2,
+                      ),
                     ),
-                  ),
-                  Icon(Icons.notifications_none, color: Colors.white),
-                ],
+                    Icon(Icons.notifications_none, color: Colors.white),
+                  ],
+                ),
               ),
             ),
           ],
@@ -276,11 +210,7 @@ class _HomeScreenState extends State<HomeScreen>
   // Selamlama kartı
   Widget _buildGreetingCard() {
     final hour = DateTime.now().hour;
-    final greet = hour < 12
-        ? "Günaydın"
-        : hour < 18
-            ? "İyi günler"
-            : "İyi akşamlar";
+    final greet = hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Container(
@@ -304,10 +234,10 @@ class _HomeScreenState extends State<HomeScreen>
               child: Text("👋", style: TextStyle(fontSize: 18)),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Text(
                     "Team 1'e selam!",
                     style: TextStyle(
@@ -347,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Hızlı işlemler (pastel)
+  // Hızlı işlemler (pastel) — KALDI
   Widget _buildQuickActions() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18.0),
@@ -388,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Eğlenceli kartlar (yatay)
+  // Eğlenceli kartlar (yatay) — KALDI
   Widget _buildFunStrip() {
     return SizedBox(
       height: 120,
@@ -461,103 +391,28 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Alt bar – Menü item’ı asistan kısa yolunu açar
-  Widget _buildBottomBar({required VoidCallback onMenuTap}) {
+  // Alt bar – yalnızca: solda Hesabım, ortada Kaptan için boşluk, sağda Çıkış Yap
+  Widget _buildBottomBar({required double bottomSafe}) {
     return Container(
-      height: 62,
+      height: 62 + bottomSafe,
+      padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe - 2 : 0),
       decoration: const BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))
-        ],
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _BottomNavItem(
-              icon: Icons.home_rounded, label: "Ana Sayfa", onTap: () {}),
-          _BottomNavItem(
-              icon: Icons.assignment, label: "Başvurular", onTap: () {}),
-          _BottomNavItem(icon: Icons.settings, label: "Menü", onTap: onMenuTap),
-          _BottomNavItem(icon: Icons.send, label: "Para Gönder", onTap: () {}),
-          _BottomNavItem(icon: Icons.payment, label: "Ödeme Yap", onTap: () {}),
+          _BottomNavItem(icon: Icons.person, label: "Hesabım", onTap: () {
+            // TODO: Hesabım sayfasına git
+          }),
+          SizedBox(width: _captainDiameter + 20), // Ortadaki Kaptan için boşluk
+          _BottomNavItem(icon: Icons.exit_to_app, label: "Çıkış Yap", onTap: () {
+            // TODO: Çıkış işlemi
+          }),
         ],
       ),
     );
-  }
-
-  // Menü hızlı işlemler
-  void _openMenuQuickActions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.smart_toy_outlined),
-                  title: const Text('Asistan sohbeti'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    Navigator.pushNamed(context, '/chat');
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.visibility),
-                  title: const Text('Asistan balonunu göster'),
-                  subtitle: const Text('Ekranda görünmüyorsa geri getir'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    setState(() => assistantVisible = true);
-                  },
-                ),
-                const SizedBox(height: 6),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // Asistan balonu resmi: tam sığdır (contain) + iç padding
-  Widget _assistantBubbleImage({required double radius}) {
-    final double size = radius * 2;
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        color: Colors.white, // beyaz zemin
-        shape: BoxShape.circle,
-      ),
-      padding:
-          const EdgeInsets.all(8), // kenarlara değmesin; istersen artır/azalt
-      child: ClipOval(
-        child: Image.asset(
-          'lib/assets/images/chatbot/kalpli.png',
-          fit: BoxFit.contain, // oranı koruyarak çemberin içine sığdırır
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.high,
-        ),
-      ),
-    );
-  }
-
-  // Asistanı ekran sınırları içinde tut
-  void _clampAssistant(Size size) {
-    final double maxX = size.width - assistantRadius * 2;
-    final double maxY =
-        size.height - assistantRadius * 2 - 62; // alt bar kadar boşluk
-    if (assistantX < 8) assistantX = 8;
-    if (assistantY < 8) assistantY = 8;
-    if (assistantX > maxX - 8) assistantX = maxX - 8;
-    if (assistantY > maxY - 8) assistantY = maxY - 8;
   }
 }
 
