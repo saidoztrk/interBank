@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/message_model.dart';
 import '../models/bot_badge_state.dart';
+import '../services/api_service.dart'; // GÜNCEL: chat_service yerine api_service
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
@@ -26,6 +27,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _waitingReply = false;
   bool _hasConnection = true;
+  bool _backendAvailable = true; // Backend durumu
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
 
@@ -44,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleScrollToBottom();
       _precacheBotAssets();
+      _checkBackendHealth(); // Backend sağlık kontrolü
     });
 
     _checkInitialConnection();
@@ -57,6 +60,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollCtrl.dispose();
     _subscription.cancel();
     super.dispose();
+  }
+
+  // ---- Backend Sağlık Kontrolü ----
+  Future<void> _checkBackendHealth() async {
+    print('🔍 Backend sağlık kontrolü yapılıyor...');
+
+    try {
+      final healthy = await ApiService.checkHealth();
+      if (mounted) {
+        setState(() {
+          _backendAvailable = healthy;
+        });
+
+        if (healthy) {
+          print('✅ Backend bağlantısı başarılı!');
+          _messages.add(
+            ChatMessage.bot(
+              '🚀 Backend sunucusu aktif! Artık gerçek AI yanıtları alabilirsiniz.',
+              badge: BotBadgeState.connection,
+            ),
+          );
+        } else {
+          print('❌ Backend sunucusu çalışmıyor');
+          _messages.add(
+            ChatMessage.bot(
+              '⚠️ Backend sunucusuna bağlanılamıyor.\n\nLütfen backend sunucusunun çalıştığını kontrol edin:\n• Terminal: npm start\n• Port: 3001\n• URL: http://localhost:3001',
+              badge: BotBadgeState.noConnection,
+            ),
+          );
+        }
+        _scheduleScrollToBottom();
+      }
+    } catch (e) {
+      print('❌ Backend sağlık kontrolü hatası: $e');
+      if (mounted) {
+        setState(() {
+          _backendAvailable = false;
+        });
+      }
+    }
   }
 
   // ---- Connectivity (v6) ----
@@ -84,6 +127,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             badge: BotBadgeState.connection,
           ),
         );
+        // Bağlantı geri gelince backend'i tekrar kontrol et
+        _checkBackendHealth();
       }
     });
 
@@ -102,9 +147,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'lib/assets/images/captain/captain_writing.png',
       'lib/assets/images/captain/captain_connection.png',
       'lib/assets/images/captain/captain_noconnection.png',
+      'lib/assets/images/captain/captain_sekreter.png',
     ];
     for (final a in assets) {
-      // const KALDIRILDI
       precacheImage(AssetImage(a), context);
     }
   }
@@ -125,16 +170,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  // ---- Messaging ----
+  // ---- Messaging with Backend ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
+    // Bağlantı kontrolü
     if (!_hasConnection) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(ChatMessage.bot(
-          'Ağ hatası: çevrimdışısın.',
+          'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.',
           badge: BotBadgeState.noConnection,
         ));
       });
@@ -142,6 +188,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // Backend kontrolü
+    if (!_backendAvailable) {
+      setState(() {
+        _messages.add(ChatMessage.user(trimmed));
+        _messages.add(ChatMessage.bot(
+          '🔧 Sunucu şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
+          badge: BotBadgeState.noConnection,
+        ));
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+
+    // Kullanıcı mesajını ekle
     setState(() {
       _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
@@ -149,34 +209,59 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scheduleScrollToBottom();
 
     try {
-      // TODO: gerçek backend çağrını buraya koy
-      final reply = await _fakeBotReply(trimmed);
+      print('📤 Backend\'e mesaj gönderiliyor: $trimmed');
 
-      setState(() {
-        _messages.add(
-          ChatMessage.bot(
-            reply,
-            badge: BotBadgeState.sekreter, // varsayılan rozet
-          ),
-        );
-        _waitingReply = false;
-      });
-      _scheduleScrollToBottom();
-    } catch (_) {
-      setState(() {
-        _messages.add(ChatMessage.bot(
-          'Ağ hatası oluştu. Lütfen tekrar dener misin?',
-          badge: BotBadgeState.noConnection,
-        ));
-        _waitingReply = false;
-      });
-      _scheduleScrollToBottom();
+      // Backend'e istek gönder
+      final response = await ApiService.sendMessage(
+        message: trimmed,
+        userId: 'team1', // Buraya gerçek user ID'si gelecek
+      );
+
+      print(
+          '📥 Backend yanıtı alındı: ${response.message.substring(0, 50)}...');
+
+      if (mounted) {
+        setState(() {
+          _messages.add(
+            ChatMessage.bot(
+              response.message,
+              badge: response.badgeState,
+            ),
+          );
+          _waitingReply = false;
+        });
+        _scheduleScrollToBottom();
+      }
+    } on ApiException catch (e) {
+      print('❌ API Hatası: ${e.message}');
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessage.bot(
+            'Hata: ${e.message}',
+            badge: BotBadgeState.noConnection,
+          ));
+          _waitingReply = false;
+
+          // Sunucu hatası ise backend durumunu güncelle
+          if (e.statusCode == 0) {
+            _backendAvailable = false;
+          }
+        });
+        _scheduleScrollToBottom();
+      }
+    } catch (e) {
+      print('❌ Beklenmeyen hata: $e');
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessage.bot(
+            'Beklenmeyen bir hata oluştu. Lütfen tekrar dener misiniz?',
+            badge: BotBadgeState.noConnection,
+          ));
+          _waitingReply = false;
+        });
+        _scheduleScrollToBottom();
+      }
     }
-  }
-
-  Future<String> _fakeBotReply(String userText) async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    return 'Şunları söyledin: "$userText"';
   }
 
   // ---- Build ----
@@ -207,11 +292,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               }
             },
           ),
-          title: const Text(
-            'Asistan',
-            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Asistan',
+                style:
+                    TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 8),
+              // Backend durumu göstergesi
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _backendAvailable ? Colors.green : Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.grey),
+              onPressed: _checkBackendHealth,
+              tooltip: 'Sunucu durumunu kontrol et',
+            ),
             IconButton(
               icon: const Icon(Icons.more_vert, color: Colors.grey),
               onPressed: () {},
@@ -225,6 +331,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 child: SafeArea(
                   child: Column(
                     children: [
+                      // Backend durumu bildirimi (üstte)
+                      if (!_backendAvailable)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          color: Colors.orange.shade100,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Backend sunucusu çalışmıyor. "npm start" ile başlatın.',
+                                  style: TextStyle(color: Colors.orange),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _checkBackendHealth,
+                                child: const Text('Yeniden Dene'),
+                              ),
+                            ],
+                          ),
+                        ),
                       Expanded(
                         child: ListView.builder(
                           controller: _scrollCtrl,
@@ -249,7 +378,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                       ),
                       MessageInput(
-                        enabled: !_waitingReply,
+                        enabled: !_waitingReply && _backendAvailable,
                         onSend: _sendUserMessage,
                       ),
                     ],
