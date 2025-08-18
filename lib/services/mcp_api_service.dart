@@ -5,18 +5,18 @@ import 'package:http/http.dart' as http;
 import '../models/bot_badge_state.dart';
 
 class McpApiService {
-  // MCP Agent API URL - PORT 8081
-  static const String _baseUrl = 'http://10.0.2.2:8081'; // Android emülatör
-  // static const String _baseUrl = 'http://192.168.1.XXX:8081'; // Gerçek cihaz için IP'nizi yazın
-  // static const String _baseUrl = 'http://localhost:8081'; // iOS simülatör
+  // MCP Agent API URL - Android emülatör için 10.0.2.2 kullan
+  static const String _baseUrl = 'http://10.0.2.2:8081';
 
-  static const Duration _timeout =
-      Duration(seconds: 15); // MCP için daha uzun timeout
+  // Eğer gerçek cihazda test ediyorsanız, bilgisayarınızın IP'sini kullanın:
+  // static const String _baseUrl = 'http://192.168.1.XXX:8081';
+
+  static const Duration _timeout = Duration(seconds: 15);
 
   /// MCP Agent'a chat mesajı gönder ve yanıt al
   static Future<McpChatResponse> sendMessage({
     required String message,
-    required int userId, // MCP Agent int user_id bekliyor
+    required int userId,
   }) async {
     try {
       final url = Uri.parse('$_baseUrl/chat');
@@ -31,14 +31,17 @@ class McpApiService {
         'message': message,
       };
 
+      // UTF-8 encoding ile gönder
+      final jsonBody = utf8.encode(jsonEncode(requestBody));
+
       final response = await http
           .post(
             url,
             headers: {
-              'Content-Type': 'application/json',
+              'Content-Type': 'application/json; charset=utf-8',
               'Accept': 'application/json',
             },
-            body: jsonEncode(requestBody),
+            body: jsonBody,
           )
           .timeout(_timeout);
 
@@ -48,11 +51,9 @@ class McpApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        // MCP Agent yanıt formatını kontrol et
         if (data['success'] == true) {
           return McpChatResponse.fromJson(data);
         } else {
-          // Hatalı yanıt
           final errorMsg = data['error']?['message'] ?? 'Bilinmeyen hata';
           throw McpApiException(errorMsg, response.statusCode);
         }
@@ -62,22 +63,26 @@ class McpApiService {
           response.statusCode,
         );
       }
-    } on SocketException {
+    } on SocketException catch (e) {
+      print('❌ Socket Exception: $e');
       throw const McpApiException(
-        'MCP Agent sunucusuna bağlanılamıyor. Sunucunun çalıştığını kontrol edin.',
+        'MCP Agent sunucusuna bağlanılamıyor. Network hatası.',
         0,
       );
-    } on http.ClientException {
+    } on http.ClientException catch (e) {
+      print('❌ HTTP Client Exception: $e');
       throw const McpApiException(
         'HTTP bağlantı hatası. MCP Agent (port 8081) çalışıyor mu?',
         0,
       );
-    } on FormatException {
+    } on FormatException catch (e) {
+      print('❌ Format Exception: $e');
       throw const McpApiException(
         'MCP Agent\'den geçersiz JSON yanıtı alındı.',
         0,
       );
     } catch (e) {
+      print('❌ Genel hata: $e');
       if (e is McpApiException) rethrow;
       throw McpApiException(
         'Beklenmeyen hata: $e',
@@ -86,7 +91,7 @@ class McpApiService {
     }
   }
 
-  /// MCP Agent sağlık kontrolü
+  /// MCP Agent sağlık kontrolü - daha detaylı debug
   static Future<bool> checkHealth() async {
     try {
       final url = Uri.parse('$_baseUrl/health');
@@ -97,6 +102,8 @@ class McpApiService {
           );
 
       print('💊 Health Status: ${response.statusCode}');
+      print('💊 Health Response: ${response.body}');
+
       return response.statusCode == 200;
     } catch (e) {
       print('❌ Health Check Hatası: $e');
@@ -108,9 +115,14 @@ class McpApiService {
   static Future<Map<String, bool>> checkMcpStatus() async {
     try {
       final url = Uri.parse('$_baseUrl/status');
+      print('📊 MCP Status kontrolü: $url');
+
       final response = await http.get(url).timeout(
             const Duration(seconds: 8),
           );
+
+      print('📊 Status Response: ${response.statusCode}');
+      print('📊 Status Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -131,7 +143,7 @@ class McpChatResponse {
   final BotBadgeState badgeState;
   final String timestamp;
   final int userId;
-  final Map<String, dynamic>? metadata; // MCP'den gelen ek bilgiler
+  final Map<String, dynamic>? metadata;
 
   const McpChatResponse({
     required this.success,
@@ -143,10 +155,7 @@ class McpChatResponse {
   });
 
   factory McpChatResponse.fromJson(Map<String, dynamic> json) {
-    // MCP Agent yanıt formatına uygun parsing
     final responseText = json['response'] as String? ?? '';
-
-    // Badge state'i response içeriğine göre belirle
     BotBadgeState badgeState = _determineBadgeFromContent(responseText);
 
     return McpChatResponse(
@@ -159,32 +168,27 @@ class McpChatResponse {
     );
   }
 
-  /// Response içeriğine göre badge state belirle
   static BotBadgeState _determineBadgeFromContent(String content) {
     final lowerContent = content.toLowerCase();
 
-    // Banking/finance kelimeleri için özel badge
     if (lowerContent
-        .contains(RegExp(r'(hesap|bakiye|para|transfer|ödeme|fatura|banka)'))) {
+        .contains(RegExp(r'(account|balance|money|transfer|payment|bank)'))) {
       return BotBadgeState.sekreter;
     }
 
-    // Bağlantı sorunları
-    if (lowerContent.contains(RegExp(r'(bağlant|hata|sorun|mevcut değil)'))) {
+    if (lowerContent
+        .contains(RegExp(r'(connection|error|problem|unavailable)'))) {
       return BotBadgeState.noConnection;
     }
 
-    // Başarılı işlemler
-    if (lowerContent.contains(RegExp(r'(başarı|tamamland|gerçekleştir)'))) {
+    if (lowerContent.contains(RegExp(r'(success|completed|done)'))) {
       return BotBadgeState.connection;
     }
 
-    // Varsayılan banking assistant
     return BotBadgeState.sekreter;
   }
 }
 
-/// MCP API hata sınıfı
 class McpApiException implements Exception {
   final String message;
   final int statusCode;
