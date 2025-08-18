@@ -5,7 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/message_model.dart';
 import '../models/bot_badge_state.dart';
-import '../services/api_service.dart'; // GÜNCEL: chat_service yerine api_service
+import '../services/mcp_api_service.dart'; // YENİ: MCP Agent servisi
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
@@ -19,24 +19,30 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [
-    ChatMessage.bot('Merhaba! Size nasıl yardımcı olabilirim?',
-        badge: BotBadgeState.sekreter),
+    ChatMessage.bot(
+      '🏦 Merhaba! Ben CaptainBank asistanınızım. Banking işlemlerinizde size nasıl yardımcı olabilirim?',
+      badge: BotBadgeState.sekreter,
+    ),
   ];
 
   final ScrollController _scrollCtrl = ScrollController();
 
   bool _waitingReply = false;
   bool _hasConnection = true;
-  bool _backendAvailable = true; // Backend durumu
+  bool _mcpAgentAvailable = true; // MCP Agent durumu
+  bool _mcpServersHealthy = false; // MCP sunucuları durumu
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
+
+  // User ID - login sisteminden gelecek (şimdilik sabit)
+  int get currentUserId => 12345;
 
   // Scroll titremesini azaltmak için basit throttle
   bool _scrollScheduled = false;
 
   // Pastel renkler
-  static const _pastelBg = Color(0xFFF7F9FC); // arka plan
-  static const _pastelPrimary = Color(0xFF8AB4F8); // user bubble rengi
+  static const _pastelBg = Color(0xFFF7F9FC);
+  static const _pastelPrimary = Color(0xFF8AB4F8);
 
   @override
   void initState() {
@@ -46,7 +52,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleScrollToBottom();
       _precacheBotAssets();
-      _checkBackendHealth(); // Backend sağlık kontrolü
+      _checkMcpAgentHealth(); // MCP Agent sağlık kontrolü
     });
 
     _checkInitialConnection();
@@ -62,30 +68,47 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ---- Backend Sağlık Kontrolü ----
-  Future<void> _checkBackendHealth() async {
-    print('🔍 Backend sağlık kontrolü yapılıyor...');
+  // ---- MCP Agent Sağlık Kontrolü ----
+  Future<void> _checkMcpAgentHealth() async {
+    print('🔍 MCP Agent sağlık kontrolü yapılıyor...');
 
     try {
-      final healthy = await ApiService.checkHealth();
+      // Ana agent kontrolü
+      final agentHealthy = await McpApiService.checkHealth();
+
+      // MCP sunucuları kontrolü
+      final mcpStatus = await McpApiService.checkMcpStatus();
+      final mcpHealthy = mcpStatus.values.any((status) => status);
+
       if (mounted) {
         setState(() {
-          _backendAvailable = healthy;
+          _mcpAgentAvailable = agentHealthy;
+          _mcpServersHealthy = mcpHealthy;
         });
 
-        if (healthy) {
-          print('✅ Backend bağlantısı başarılı!');
-          _messages.add(
-            ChatMessage.bot(
-              '🚀 Backend sunucusu aktif! Artık gerçek AI yanıtları alabilirsiniz.',
-              badge: BotBadgeState.connection,
-            ),
-          );
+        if (agentHealthy) {
+          if (mcpHealthy) {
+            print('✅ MCP Agent ve sunucular aktif!');
+            _messages.add(
+              ChatMessage.bot(
+                '🚀 MCP Agent bağlantısı başarılı! Fortuna Banking sistemine erişebiliyorum.',
+                badge: BotBadgeState.connection,
+              ),
+            );
+          } else {
+            print('⚠️ MCP Agent aktif ama MCP sunucuları erişilemez');
+            _messages.add(
+              ChatMessage.bot(
+                '⚠️ MCP Agent çalışıyor ancak banking sunucularına bağlanamıyor.\n\nMCP Server\'ın (port 8080) çalıştığını kontrol edin.',
+                badge: BotBadgeState.thinking,
+              ),
+            );
+          }
         } else {
-          print('❌ Backend sunucusu çalışmıyor');
+          print('❌ MCP Agent sunucusu çalışmıyor');
           _messages.add(
             ChatMessage.bot(
-              '⚠️ Backend sunucusuna bağlanılamıyor.\n\nLütfen backend sunucusunun çalıştığını kontrol edin:\n• Terminal: npm start\n• Port: 3001\n• URL: http://localhost:3001',
+              '❌ MCP Agent sunucusuna bağlanılamıyor.\n\nLütfen şu adımları kontrol edin:\n• Terminal: python mcp_agent/agent_api.py\n• Port: 8081\n• URL: http://127.0.0.1:8081',
               badge: BotBadgeState.noConnection,
             ),
           );
@@ -93,10 +116,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _scheduleScrollToBottom();
       }
     } catch (e) {
-      print('❌ Backend sağlık kontrolü hatası: $e');
+      print('❌ MCP Agent sağlık kontrolü hatası: $e');
       if (mounted) {
         setState(() {
-          _backendAvailable = false;
+          _mcpAgentAvailable = false;
         });
       }
     }
@@ -112,23 +135,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _hasConnection = isConnected;
 
       if (!isConnected) {
-        // OFFLINE: captain_noconnection.png
         _messages.add(
           ChatMessage.bot(
-            'Bağlantı koptu. Çevrimdışısın.',
+            'İnternet bağlantısı koptu. Çevrimdışısınız.',
             badge: BotBadgeState.noConnection,
           ),
         );
       } else {
-        // ONLINE: captain_connection.png
         _messages.add(
           ChatMessage.bot(
-            'Wi-Fi geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
+            'İnternet bağlantısı geri geldi! 🌐',
             badge: BotBadgeState.connection,
           ),
         );
-        // Bağlantı geri gelince backend'i tekrar kontrol et
-        _checkBackendHealth();
+        _checkMcpAgentHealth(); // Bağlantı geri gelince agent'ı kontrol et
       }
     });
 
@@ -170,7 +190,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  // ---- Messaging with Backend ----
+  // ---- MCP Agent ile Messaging ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -188,12 +208,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Backend kontrolü
-    if (!_backendAvailable) {
+    // MCP Agent kontrolü
+    if (!_mcpAgentAvailable) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(ChatMessage.bot(
-          '🔧 Sunucu şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
+          '🔧 MCP Agent şu anda kullanılamıyor. Lütfen sunucuyu başlatın.',
           badge: BotBadgeState.noConnection,
         ));
       });
@@ -209,19 +229,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scheduleScrollToBottom();
 
     try {
-      print('📤 Backend\'e mesaj gönderiliyor: $trimmed');
+      print('📤 MCP Agent\'e mesaj gönderiliyor: $trimmed');
 
-      // Backend'e istek gönder
-      final response = await ApiService.sendMessage(
+      // Thinking badge ekle (geçici)
+      setState(() {
+        _messages.add(ChatMessage.bot(
+          'Düşünüyorum...',
+          badge: BotBadgeState.thinking,
+        ));
+      });
+      _scheduleScrollToBottom();
+
+      // MCP Agent'a istek gönder
+      final response = await McpApiService.sendMessage(
         message: trimmed,
-        userId: 'team1', // Buraya gerçek user ID'si gelecek
+        userId: currentUserId,
       );
 
-      print(
-          '📥 Backend yanıtı alındı: ${response.message.substring(0, 50)}...');
+      print('📥 MCP Agent yanıtı alındı');
 
       if (mounted) {
         setState(() {
+          // Thinking mesajını kaldır
+          if (_messages.isNotEmpty &&
+              _messages.last.text == 'Düşünüyorum...' &&
+              _messages.last.sender == Sender.bot) {
+            _messages.removeLast();
+          }
+
           _messages.add(
             ChatMessage.bot(
               response.message,
@@ -232,19 +267,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         });
         _scheduleScrollToBottom();
       }
-    } on ApiException catch (e) {
-      print('❌ API Hatası: ${e.message}');
+    } on McpApiException catch (e) {
+      print('❌ MCP API Hatası: ${e.message}');
       if (mounted) {
         setState(() {
+          // Thinking mesajını kaldır
+          if (_messages.isNotEmpty &&
+              _messages.last.text == 'Düşünüyorum...' &&
+              _messages.last.sender == Sender.bot) {
+            _messages.removeLast();
+          }
+
           _messages.add(ChatMessage.bot(
             'Hata: ${e.message}',
             badge: BotBadgeState.noConnection,
           ));
           _waitingReply = false;
 
-          // Sunucu hatası ise backend durumunu güncelle
+          // Sunucu hatası ise durumu güncelle
           if (e.statusCode == 0) {
-            _backendAvailable = false;
+            _mcpAgentAvailable = false;
           }
         });
         _scheduleScrollToBottom();
@@ -253,6 +295,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       print('❌ Beklenmeyen hata: $e');
       if (mounted) {
         setState(() {
+          if (_messages.isNotEmpty &&
+              _messages.last.text == 'Düşünüyorum...' &&
+              _messages.last.sender == Sender.bot) {
+            _messages.removeLast();
+          }
+
           _messages.add(ChatMessage.bot(
             'Beklenmeyen bir hata oluştu. Lütfen tekrar dener misiniz?',
             badge: BotBadgeState.noConnection,
@@ -267,7 +315,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ---- Build ----
   @override
   Widget build(BuildContext context) {
-    // ChatBubble user rengi Theme.primaryColor'dan aldığı için burada pastel primary veriyoruz.
     final theme = Theme.of(context).copyWith(
       primaryColor: _pastelPrimary,
       colorScheme:
@@ -295,18 +342,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Asistan',
-                style:
-                    TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+              const Icon(
+                Icons.smart_toy,
+                color: Colors.grey,
+                size: 20,
               ),
               const SizedBox(width: 8),
-              // Backend durumu göstergesi
+              const Text(
+                'CaptainBank AI',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // MCP Agent durumu göstergesi
               Container(
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: _backendAvailable ? Colors.green : Colors.red,
+                  color: _mcpAgentAvailable && _mcpServersHealthy
+                      ? Colors.green
+                      : _mcpAgentAvailable
+                          ? Colors.orange
+                          : Colors.red,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -315,8 +375,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.grey),
-              onPressed: _checkBackendHealth,
-              tooltip: 'Sunucu durumunu kontrol et',
+              onPressed: _checkMcpAgentHealth,
+              tooltip: 'MCP Agent durumunu kontrol et',
             ),
             IconButton(
               icon: const Icon(Icons.more_vert, color: Colors.grey),
@@ -331,8 +391,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 child: SafeArea(
                   child: Column(
                     children: [
-                      // Backend durumu bildirimi (üstte)
-                      if (!_backendAvailable)
+                      // MCP Agent durumu bildirimi
+                      if (!_mcpAgentAvailable)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          color: Colors.red.shade100,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error, color: Colors.red),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'MCP Agent offline. "python mcp_agent/agent_api.py" ile başlatın.',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _checkMcpAgentHealth,
+                                child: const Text('Tekrar Dene'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (!_mcpServersHealthy)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
@@ -343,13 +425,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
-                                  'Backend sunucusu çalışmıyor. "npm start" ile başlatın.',
+                                  'MCP sunucuları offline. Banking servisleri sınırlı.',
                                   style: TextStyle(color: Colors.orange),
                                 ),
                               ),
                               TextButton(
-                                onPressed: _checkBackendHealth,
-                                child: const Text('Yeniden Dene'),
+                                onPressed: _checkMcpAgentHealth,
+                                child: const Text('Kontrol Et'),
                               ),
                             ],
                           ),
@@ -361,7 +443,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           padding: const EdgeInsets.only(bottom: 8),
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          // Typing indicator'ı da liste elemanı olarak ekle
                           itemCount: _messages.length + (_waitingReply ? 1 : 0),
                           itemBuilder: (context, index) {
                             final bool typingItem =
@@ -378,7 +459,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                       ),
                       MessageInput(
-                        enabled: !_waitingReply && _backendAvailable,
+                        enabled: !_waitingReply && _mcpAgentAvailable,
                         onSend: _sendUserMessage,
                       ),
                     ],
@@ -390,6 +471,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 }
 
+// Typing indicator - MCP Agent düşünüyor
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
@@ -398,9 +480,8 @@ class _TypingIndicator extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: const [
-        // Yazıyor: captain_writing.png
         CircleAvatar(
-          radius: 21, // 1.5x büyütülmüş
+          radius: 21,
           backgroundColor: Colors.transparent,
           backgroundImage:
               AssetImage('lib/assets/images/captain/captain_writing.png'),
@@ -419,7 +500,7 @@ class _TypingBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white, // pastel zeminde hafif balon
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(
@@ -432,7 +513,7 @@ class _TypingBubble extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         child: Text(
-          'yazıyor...',
+          'MCP Agent çalışıyor...',
           style: TextStyle(fontSize: 14, color: Colors.black87),
         ),
       ),
