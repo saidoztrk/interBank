@@ -27,15 +27,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _waitingReply = false;
   bool _hasConnection = true;
-  bool _backendAvailable = true; // Backend durumu
+  bool _backendAvailable = true;
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
 
-  // Scroll titremesini azaltmak için basit throttle
   bool _scrollScheduled = false;
 
-  // Pastel renkler
-  static const _pastelBg = Color(0xFFF7F9FC); // arka plan
   static const _pastelPrimary = Color(0xFF8AB4F8); // user bubble rengi
 
   @override
@@ -46,7 +43,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleScrollToBottom();
       _precacheBotAssets();
-      _checkBackendHealth(); // Backend sağlık kontrolü
+      _checkBackendHealth();
     });
 
     _checkInitialConnection();
@@ -64,8 +61,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // ---- Backend Sağlık Kontrolü ----
   Future<void> _checkBackendHealth() async {
-    print('🔍 Backend sağlık kontrolü yapılıyor...');
-
     try {
       final healthy = await ApiService.checkHealth();
       if (mounted) {
@@ -74,7 +69,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         });
 
         if (healthy) {
-          print('✅ Backend bağlantısı başarılı!');
           _messages.add(
             ChatMessage.bot(
               '🚀 Backend sunucusu aktif! Artık gerçek AI yanıtları alabilirsiniz.',
@@ -82,7 +76,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           );
         } else {
-          print('❌ Backend sunucusu çalışmıyor');
           _messages.add(
             ChatMessage.bot(
               '⚠️ Backend sunucusuna bağlanılamıyor.\n\nLütfen backend sunucusunun çalıştığını kontrol edin:\n• Terminal: npm start\n• Port: 3001\n• URL: http://localhost:3001',
@@ -93,7 +86,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _scheduleScrollToBottom();
       }
     } catch (e) {
-      print('❌ Backend sağlık kontrolü hatası: $e');
       if (mounted) {
         setState(() {
           _backendAvailable = false;
@@ -102,17 +94,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ---- Connectivity (v6) ----
+  // ---- Connectivity ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
-
     if (_hasConnection == isConnected) return;
 
     setState(() {
       _hasConnection = isConnected;
 
       if (!isConnected) {
-        // OFFLINE: captain_noconnection.png
         _messages.add(
           ChatMessage.bot(
             'Bağlantı koptu. Çevrimdışısın.',
@@ -120,14 +110,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
         );
       } else {
-        // ONLINE: captain_connection.png
         _messages.add(
           ChatMessage.bot(
             'Wi-Fi geri geldi! Kaldığımız yerden devam edebiliriz. 🙌',
             badge: BotBadgeState.connection,
           ),
         );
-        // Bağlantı geri gelince backend'i tekrar kontrol et
         _checkBackendHealth();
       }
     });
@@ -175,7 +163,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    // Bağlantı kontrolü
     if (!_hasConnection) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
@@ -188,7 +175,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Backend kontrolü
     if (!_backendAvailable) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
@@ -201,7 +187,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Kullanıcı mesajını ekle
     setState(() {
       _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
@@ -209,16 +194,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scheduleScrollToBottom();
 
     try {
-      print('📤 Backend\'e mesaj gönderiliyor: $trimmed');
-
-      // Backend'e istek gönder
       final response = await ApiService.sendMessage(
         message: trimmed,
-        userId: 'team1', // Buraya gerçek user ID'si gelecek
+        userId: 'team1',
       );
-
-      print(
-          '📥 Backend yanıtı alındı: ${response.message.substring(0, 50)}...');
 
       if (mounted) {
         setState(() {
@@ -233,7 +212,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _scheduleScrollToBottom();
       }
     } on ApiException catch (e) {
-      print('❌ API Hatası: ${e.message}');
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage.bot(
@@ -241,8 +219,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             badge: BotBadgeState.noConnection,
           ));
           _waitingReply = false;
-
-          // Sunucu hatası ise backend durumunu güncelle
           if (e.statusCode == 0) {
             _backendAvailable = false;
           }
@@ -250,7 +226,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _scheduleScrollToBottom();
       }
     } catch (e) {
-      print('❌ Beklenmeyen hata: $e');
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage.bot(
@@ -267,7 +242,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ---- Build ----
   @override
   Widget build(BuildContext context) {
-    // ChatBubble user rengi Theme.primaryColor'dan aldığı için burada pastel primary veriyoruz.
     final theme = Theme.of(context).copyWith(
       primaryColor: _pastelPrimary,
       colorScheme:
@@ -277,13 +251,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Theme(
       data: theme,
       child: Scaffold(
-        backgroundColor: _pastelBg,
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           elevation: 0.5,
           centerTitle: true,
           backgroundColor: Colors.white,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.grey),
+            icon: const Icon(Icons.arrow_back,
+                color: Color.fromARGB(255, 0, 110, 255)),
             onPressed: () {
               if (Navigator.canPop(context)) {
                 Navigator.pop(context);
@@ -296,12 +271,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Asistan',
-                style:
-                    TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+                'Kaptan',
+                style: TextStyle(
+                    color: Color.fromARGB(255, 0, 110, 255),
+                    fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: 8),
-              // Backend durumu göstergesi
               Container(
                 width: 8,
                 height: 8,
@@ -314,12 +289,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.grey),
+              icon: const Icon(Icons.refresh,
+                  color: Color.fromARGB(255, 0, 110, 255)),
               onPressed: _checkBackendHealth,
               tooltip: 'Sunucu durumunu kontrol et',
             ),
             IconButton(
-              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              icon: const Icon(Icons.more_vert,
+                  color: Color.fromARGB(255, 0, 110, 255)),
               onPressed: () {},
             ),
           ],
@@ -329,57 +306,76 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : GestureDetector(
                 onTap: () => FocusScope.of(context).unfocus(),
                 child: SafeArea(
-                  child: Column(
+                  child: Stack(
                     children: [
-                      // Backend durumu bildirimi (üstte)
-                      if (!_backendAvailable)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          color: Colors.orange.shade100,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning, color: Colors.orange),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Backend sunucusu çalışmıyor. "npm start" ile başlatın.',
-                                  style: TextStyle(color: Colors.orange),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _checkBackendHealth,
-                                child: const Text('Yeniden Dene'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _scrollCtrl,
-                          physics: const ClampingScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 8),
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          // Typing indicator'ı da liste elemanı olarak ekle
-                          itemCount: _messages.length + (_waitingReply ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            final bool typingItem =
-                                _waitingReply && index == _messages.length;
-                            if (typingItem) {
-                              return const Padding(
-                                padding: EdgeInsets.only(left: 18, bottom: 6),
-                                child: _TypingIndicator(),
-                              );
-                            }
-                            final msg = _messages[index];
-                            return ChatBubble(message: msg);
-                          },
+                      // 🔵 Arka plan görseli tüm ekranı kaplar
+                      Positioned.fill(
+                        child: Image.asset(
+                          "lib/assets/images/captain/chat/Chatbot-Background.jpeg",
+                          fit: BoxFit.cover,
                         ),
                       ),
-                      MessageInput(
-                        enabled: !_waitingReply && _backendAvailable,
-                        onSend: _sendUserMessage,
+                      // 🔵 Hafif beyaz overlay (okunabilirlik için)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.white.withOpacity(0.5),
+                        ),
+                      ),
+                      // 🔵 Chat içerik
+                      Column(
+                        children: [
+                          if (!_backendAvailable)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              color: Colors.orange.shade100.withOpacity(0.9),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.warning,
+                                      color: Colors.orange),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'Backend sunucusu çalışmıyor. "npm start" ile başlatın.',
+                                      style: TextStyle(color: Colors.orange),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _checkBackendHealth,
+                                    child: const Text('Yeniden Dene'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Expanded(
+                            child: ListView.builder(
+                              controller: _scrollCtrl,
+                              physics: const ClampingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 8),
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              itemCount:
+                                  _messages.length + (_waitingReply ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                final typingItem =
+                                    _waitingReply && index == _messages.length;
+                                if (typingItem) {
+                                  return const Padding(
+                                    padding:
+                                        EdgeInsets.only(left: 18, bottom: 6),
+                                    child: _TypingIndicator(),
+                                  );
+                                }
+                                final msg = _messages[index];
+                                return ChatBubble(message: msg);
+                              },
+                            ),
+                          ),
+                          MessageInput(
+                            enabled: !_waitingReply && _backendAvailable,
+                            onSend: _sendUserMessage,
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -398,9 +394,8 @@ class _TypingIndicator extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: const [
-        // Yazıyor: captain_writing.png
         CircleAvatar(
-          radius: 21, // 1.5x büyütülmüş
+          radius: 21,
           backgroundColor: Colors.transparent,
           backgroundImage:
               AssetImage('lib/assets/images/captain/captain_writing.png'),
@@ -419,7 +414,7 @@ class _TypingBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white, // pastel zeminde hafif balon
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(
