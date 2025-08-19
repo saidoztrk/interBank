@@ -91,6 +91,14 @@ flutter:
     - lib/assets/images/captain/home/home.png
     - lib/assets/images/captain/home/pay.png
     - lib/assets/images/captain/home/send.png
+
+    - lib/assets/images/captain/login/
+    - lib/assets/images/captain/login/Sea-Background.jpeg
+
+    - lib/assets/images/captain/chat/
+    - lib/assets/images/captain/chat/Chatbot-Background.jpeg
+
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

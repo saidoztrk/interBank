@@ -29,8 +29,12 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const gradient = LinearGradient(
-      colors: [Color(0xFF0C5DB1), Color(0xFF0870C9)],
+    // Arka plan görseli üstüne yumuşak mavi bir overlay (okunabilirlik için)
+    const overlayGradient = LinearGradient(
+      colors: [
+        Color(0xAA0C5DB1), // üst: yoğun mavi, yarı saydam
+        Color(0x660870C9), // alt: daha şeffaf mavi
+      ],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
     );
@@ -42,95 +46,109 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFE9F1FB),
-        body: Container(
-          decoration: const BoxDecoration(gradient: gradient),
-          child: SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 6),
-                const Text(
-                  "InterCep",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1) Deniz arka planı
+            Image.asset(
+              'lib/assets/images/captain/login/Sea-Background.jpeg',
+              fit: BoxFit.cover,
+            ),
+
+            // 2) Okunabilirlik için yarı saydam mavi gradyan overlay
+            const DecoratedBox(
+              decoration: BoxDecoration(gradient: overlayGradient),
+            ),
+
+            // 3) İçerik
+            SafeArea(
+              child: Column(
+                children: [
+                  const SizedBox(height: 6),
+                  const Text(
+                    "CaptainCep",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                // Üst kısayollar
-                SizedBox(
-                  height: 76,
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    scrollDirection: Axis.horizontal,
-                    children: const [
-                      _TopShortcut(icon: Icons.verified_user, label: "Güvenlik"),
-                      _TopShortcut(icon: Icons.account_balance_wallet, label: "Yatırım"),
-                      _TopShortcut(icon: Icons.local_offer, label: "Pazarama"),
-                      _TopShortcut(icon: Icons.business_center, label: "Genç KOBİ"),
-                      _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
-                    ],
+                  // Üst kısayollar
+                  SizedBox(
+                    height: 76,
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      scrollDirection: Axis.horizontal,
+                      children: const [
+                        _TopShortcut(icon: Icons.verified_user, label: "Güvenlik"),
+                        _TopShortcut(icon: Icons.account_balance_wallet, label: "Yatırım"),
+                        _TopShortcut(icon: Icons.local_offer, label: "Pazarama"),
+                        _TopShortcut(icon: Icons.business_center, label: "Genç KOBİ"),
+                        _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 6),
+                  const SizedBox(height: 6),
 
-                Expanded(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: PageView(
-                          controller: _pageController,
-                          onPageChanged: (i) => setState(() => _pageIndex = i),
-                          children: [
-                            // 0: Var olan kullanıcı (PIN ile)
-                            _ExistingUserCard(
-                              name: currentUserName,
-                              segment: _segment,
-                              onLogin: _onLoginPressed,
-                              users: _users,
-                              selectedUserIndex: _selectedUser,
-                              onPickUser: (i) => setState(() => _selectedUser = i),
-                            ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: PageView(
+                            controller: _pageController,
+                            onPageChanged: (i) => setState(() => _pageIndex = i),
+                            children: [
+                              // 0: Var olan kullanıcı (PIN ile)
+                              _ExistingUserCard(
+                                name: currentUserName,
+                                segment: _segment,
+                                onLogin: _onLoginPressed,
+                                users: _users,
+                                selectedUserIndex: _selectedUser,
+                                onPickUser: (i) => setState(() => _selectedUser = i),
+                              ),
 
-                            // 1: Yeni kullanıcı
-                            _NewUserCard(
-                              onBireysel: _showNewUserLoginSheet,
-                              onTicari: _showCommercialLoginSheet,
-                            ),
-                          ],
+                              // 1: Yeni kullanıcı
+                              _NewUserCard(
+                                onBireysel: _showNewUserLoginSheet,
+                                onTicari: _showCommercialLoginSheet,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
 
-                      // Page indicator
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          2,
-                          (i) => AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: i == _pageIndex
-                                  ? Colors.white
-                                  : Colors.white.withOpacity(0.5),
+                        // Page indicator
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            2,
+                            (i) => AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: i == _pageIndex
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.5),
+                              ),
                             ),
                           ),
                         ),
-                      ),
 
-                      _BottomCardsAndShortcuts(),
-                    ],
+                        _BottomCardsAndShortcuts(),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
