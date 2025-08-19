@@ -1,51 +1,46 @@
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "com.example.interbank"
+    // Manifest'te package kullanmıyoruz (AGP 8+)
+    namespace = "com.interbank.mobil_asistan"
     compileSdk = flutter.compileSdkVersion
 
-    // connectivity_plus uyarısını çözmek için NDK sürümünü sabitle
-    ndkVersion = "27.0.12077973"
+    // (Opsiyonel) NDK sabitlemek istersen:
+    // ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        // TODO: Kendi benzersiz Application ID'nizi girin.
-        applicationId = "com.example.interbank"
+        // Play Store paket kimliği
+        applicationId = "com.interbank.mobil_asistan"
 
-        // Flutter yapı ayarları
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    // Java 17 önerilen
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     buildTypes {
         release {
-            // Şimdilik debug imzasıyla imzala ki `flutter run --release` çalışsın
             signingConfig = signingConfigs.getByName("debug")
-            // Eğer shrink/proguard kullanacaksan aç:
             // isMinifyEnabled = true
             // proguardFiles(
             //     getDefaultProguardFile("proguard-android-optimize.txt"),
             //     "proguard-rules.pro"
             // )
         }
-        debug {
-            // Gerekirse debug ayarları
-        }
+        debug { }
     }
 }
 

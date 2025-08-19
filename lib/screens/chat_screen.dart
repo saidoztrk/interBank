@@ -3,15 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import '../models/session_info.dart';
 import '../models/message_model.dart';
 import '../models/bot_badge_state.dart';
-import '../services/mcp_api_service.dart'; // YENİ: MCP Agent servisi
+import '../services/api_service_manager.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final String? initialSessionId;
+  final ServiceType? preferredService;
+
+  const ChatScreen({
+    super.key,
+    this.initialSessionId,
+    this.preferredService,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -29,19 +37,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _waitingReply = false;
   bool _hasConnection = true;
-  bool _mcpAgentAvailable = true; // MCP Agent durumu
-  bool _mcpServersHealthy = false; // MCP sunucuları durumu
+
+  // Çoklu servis sağlık durumu
+  ServiceHealthStatus _serviceHealth = const ServiceHealthStatus(
+    mcpAgentAvailable: false,
+    externalApiAvailable: false,
+  );
+
+  // Aktif servis
+  ServiceType _activeService = ServiceType.mcpAgent;
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
 
-  // User ID - login sisteminden gelecek (şimdilik sabit)
+  // User ID (login'den gelecek; şimdilik sabit)
   int get currentUserId => 12345;
 
-  // Scroll titremesini azaltmak için basit throttle
+  // Scroll titremesini azaltmak için throttle
   bool _scrollScheduled = false;
 
-  // Pastel renkler
-  static const _pastelBg = Color(0xFFF7F9FC);
+  // Bağlantı başarılı mesajını bir kez gösterme guard'ı
+  bool _announcedMcpUp = false;
+  bool _announcedExternalUp = false;
+
+  // Pastel renk
   static const _pastelPrimary = Color(0xFF8AB4F8);
 
   @override
@@ -49,10 +67,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    if (widget.initialSessionId != null) {
+      ApiServiceManager.setCurrentSessionId(widget.initialSessionId!);
+    }
+    if (widget.preferredService != null) {
+      ApiServiceManager.setServiceType(widget.preferredService!);
+      _activeService = widget.preferredService!;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleScrollToBottom();
       _precacheBotAssets();
-      _checkMcpAgentHealth(); // MCP Agent sağlık kontrolü
+      _checkAllServicesHealth();
     });
 
     _checkInitialConnection();
@@ -68,67 +94,96 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ---- MCP Agent Sağlık Kontrolü ----
-  Future<void> _checkMcpAgentHealth() async {
-    print('🔍 MCP Agent sağlık kontrolü yapılıyor...');
-
+  // ---- Servis Sağlık Kontrolü ----
+  Future<void> _checkAllServicesHealth() async {
     try {
-      // Ana agent kontrolü
-      final agentHealthy = await McpApiService.checkHealth();
+      final healthStatus = await ApiServiceManager.checkAllServicesHealth();
+      if (!mounted) return;
 
-      // MCP sunucuları kontrolü
-      final mcpStatus = await McpApiService.checkMcpStatus();
-      final mcpHealthy = mcpStatus.values.any((status) => status);
+      setState(() {
+        _serviceHealth = healthStatus;
+      });
 
-      if (mounted) {
+      if (!_serviceHealth.anyServiceAvailable) {
         setState(() {
-          _mcpAgentAvailable = agentHealthy;
-          _mcpServersHealthy = mcpHealthy;
-        });
-
-        if (agentHealthy) {
-          if (mcpHealthy) {
-            print('✅ MCP Agent ve sunucular aktif!');
-            _messages.add(
-              ChatMessage.bot(
-                '🚀 MCP Agent bağlantısı başarılı! Fortuna Banking sistemine erişebiliyorum.',
-                badge: BotBadgeState.connection,
-              ),
-            );
-          } else {
-            print('⚠️ MCP Agent aktif ama MCP sunucuları erişilemez');
-            _messages.add(
-              ChatMessage.bot(
-                '⚠️ MCP Agent çalışıyor ancak banking sunucularına bağlanamıyor.\n\nMCP Server\'ın (port 8080) çalıştığını kontrol edin.',
-                badge: BotBadgeState.thinking,
-              ),
-            );
-          }
-        } else {
-          print('❌ MCP Agent sunucusu çalışmıyor');
           _messages.add(
             ChatMessage.bot(
-              '❌ MCP Agent sunucusuna bağlanılamıyor.\n\nLütfen şu adımları kontrol edin:\n• Terminal: python mcp_agent/agent_api.py\n• Port: 8081\n• URL: http://127.0.0.1:8081',
+              '❌ Hiçbir backend servisi çalışmıyor.\n\n'
+              'Kontrol listesi:\n'
+              '• MCP Agent: Python (port 8081)\n'
+              '• External API: Ekibin FastAPI servisi (port 8083)',
               badge: BotBadgeState.noConnection,
             ),
           );
-        }
-        _scheduleScrollToBottom();
-      }
-    } catch (e) {
-      print('❌ MCP Agent sağlık kontrolü hatası: $e');
-      if (mounted) {
-        setState(() {
-          _mcpAgentAvailable = false;
         });
+      } else {
+        // Guard'lı ilan
+        if (_serviceHealth.mcpAgentAvailable && !_announcedMcpUp) {
+          _announcedMcpUp = true;
+          setState(() {
+            _messages.add(ChatMessage.bot('MCP Agent bağlantısı başarılı!',
+                badge: BotBadgeState.connection));
+          });
+        }
+        if (_serviceHealth.externalApiAvailable && !_announcedExternalUp) {
+          _announcedExternalUp = true;
+          setState(() {
+            _messages.add(ChatMessage.bot('External API bağlantısı başarılı!',
+                badge: BotBadgeState.connection));
+          });
+        }
+
+        // Tercih edilen servis ayakta değilse fallback
+        final preferredUp = _activeService == ServiceType.mcpAgent
+            ? _serviceHealth.mcpAgentAvailable
+            : _serviceHealth.externalApiAvailable;
+
+        if (!preferredUp) {
+          if (_serviceHealth.mcpAgentAvailable) {
+            _activeService = ServiceType.mcpAgent;
+            ApiServiceManager.setServiceType(ServiceType.mcpAgent);
+            setState(() {
+              _messages.add(
+                ChatMessage.bot('🔄 MCP Agent\'e geçiş yapıldı.',
+                    badge: BotBadgeState.connection),
+              );
+            });
+          } else if (_serviceHealth.externalApiAvailable) {
+            _activeService = ServiceType.externalApi;
+            ApiServiceManager.setServiceType(ServiceType.externalApi);
+            setState(() {
+              _messages.add(
+                ChatMessage.bot('🔄 External API\'ye geçiş yapıldı.',
+                    badge: BotBadgeState.connection),
+              );
+            });
+          }
+        }
       }
+
+      _scheduleScrollToBottom();
+    } catch (e) {
+      debugPrint('❌ Service health check error: $e');
     }
   }
 
-  // ---- Connectivity (v6) ----
+  // ---- Servis Değiştirme ----
+  void _switchService(ServiceType newService) {
+    setState(() {
+      _activeService = newService;
+      ApiServiceManager.setServiceType(newService);
+      final name = _getServiceDisplayName(newService);
+      _messages.add(
+        ChatMessage.bot('🔄 $name\'ye geçiş yapıldı.',
+            badge: BotBadgeState.connection),
+      );
+    });
+    _scheduleScrollToBottom();
+  }
+
+  // ---- Bağlantı Yönetimi ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
-
     if (_hasConnection == isConnected) return;
 
     setState(() {
@@ -136,19 +191,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (!isConnected) {
         _messages.add(
-          ChatMessage.bot(
-            'İnternet bağlantısı koptu. Çevrimdışısınız.',
-            badge: BotBadgeState.noConnection,
-          ),
+          ChatMessage.bot('İnternet bağlantısı koptu. Çevrimdışısınız.',
+              badge: BotBadgeState.noConnection),
         );
       } else {
         _messages.add(
-          ChatMessage.bot(
-            'İnternet bağlantısı geri geldi! 🌐',
-            badge: BotBadgeState.connection,
-          ),
+          ChatMessage.bot('İnternet bağlantısı geri geldi! 🌐',
+              badge: BotBadgeState.connection),
         );
-        _checkMcpAgentHealth(); // Bağlantı geri gelince agent'ı kontrol et
+        _checkAllServicesHealth();
       }
     });
 
@@ -169,8 +220,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'lib/assets/images/captain/captain_noconnection.png',
       'lib/assets/images/captain/captain_sekreter.png',
     ];
-    for (final a in assets) {
-      precacheImage(AssetImage(a), context);
+    for (final asset in assets) {
+      try {
+        await precacheImage(AssetImage(asset), context);
+      } catch (e) {
+        debugPrint('Asset precache hatası: $asset - $e');
+      }
     }
   }
 
@@ -190,38 +245,54 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  // ---- MCP Agent ile Messaging ----
+  // ---- Mesaj Gönderimi ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    // Bağlantı kontrolü
+    // Bağlantı kontrol
     if (!_hasConnection) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
-        _messages.add(ChatMessage.bot(
-          'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.',
-          badge: BotBadgeState.noConnection,
-        ));
+        _messages.add(
+          ChatMessage.bot(
+              'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.',
+              badge: BotBadgeState.noConnection),
+        );
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // MCP Agent kontrolü
-    if (!_mcpAgentAvailable) {
+    // Servis uygunluğu
+    if (!_serviceHealth.anyServiceAvailable) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
-        _messages.add(ChatMessage.bot(
-          '🔧 MCP Agent şu anda kullanılamıyor. Lütfen sunucuyu başlatın.',
-          badge: BotBadgeState.noConnection,
-        ));
+        _messages.add(
+          ChatMessage.bot(
+              '🔧 Hiçbir backend servisi kullanılamıyor. Lütfen sunucuları başlatın.',
+              badge: BotBadgeState.noConnection),
+        );
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // Kullanıcı mesajını ekle
+    // Aktif servis ayakta mı?
+    final currentServiceUp = _activeService == ServiceType.mcpAgent
+        ? _serviceHealth.mcpAgentAvailable
+        : _serviceHealth.externalApiAvailable;
+
+    if (!currentServiceUp) {
+      // Uygun olana otomatik geç
+      if (_serviceHealth.mcpAgentAvailable) {
+        _switchService(ServiceType.mcpAgent);
+      } else if (_serviceHealth.externalApiAvailable) {
+        _switchService(ServiceType.externalApi);
+      }
+    }
+
+    // Kullanıcı mesajını ekle + typing indicator
     setState(() {
       _messages.add(ChatMessage.user(trimmed));
       _waitingReply = true;
@@ -229,86 +300,224 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scheduleScrollToBottom();
 
     try {
-      print('📤 MCP Agent\'e mesaj gönderiliyor: $trimmed');
+      final response = await ApiServiceManager.sendMessage(
+        message: trimmed,
+        userId: currentUserId,
+        serviceType: _activeService,
+      );
 
-      // Thinking badge ekle (geçici)
+      if (!mounted) return;
       setState(() {
-        _messages.add(ChatMessage.bot(
-          'Düşünüyorum...',
-          badge: BotBadgeState.thinking,
-        ));
+        _messages
+            .add(ChatMessage.bot(response.message, badge: response.badgeState));
+        _waitingReply = false;
+      });
+      _scheduleScrollToBottom();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(ChatMessage.bot('Hata: ${e.message}',
+            badge: BotBadgeState.noConnection));
+        _waitingReply = false;
       });
       _scheduleScrollToBottom();
 
-      // MCP Agent'a istek gönder
-      final response = await McpApiService.sendMessage(
-        message: trimmed,
+      // Fallback dene
+      await _tryFallbackService(trimmed);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(ChatMessage.bot(
+            'Beklenmeyen bir hata oluştu. Lütfen tekrar dener misiniz?',
+            badge: BotBadgeState.noConnection));
+        _waitingReply = false;
+      });
+      _scheduleScrollToBottom();
+    }
+  }
+
+  Future<void> _tryFallbackService(String message) async {
+    final fallback = _activeService == ServiceType.mcpAgent
+        ? ServiceType.externalApi
+        : ServiceType.mcpAgent;
+
+    final fallbackUp = fallback == ServiceType.mcpAgent
+        ? _serviceHealth.mcpAgentAvailable
+        : _serviceHealth.externalApiAvailable;
+
+    if (!fallbackUp) return;
+
+    try {
+      setState(() {
+        _messages.add(ChatMessage.bot(
+            '🔄 ${_getServiceDisplayName(fallback)}\'ye geçiş yapılıyor...',
+            badge: BotBadgeState.thinking));
+      });
+      _scheduleScrollToBottom();
+
+      final response = await ApiServiceManager.sendMessage(
+        message: message,
         userId: currentUserId,
+        serviceType: fallback,
       );
 
-      print('📥 MCP Agent yanıtı alındı');
+      if (!mounted) return;
+      setState(() {
+        // geçiş mesajını kaldır
+        if (_messages.isNotEmpty &&
+            _messages.last.text.contains('geçiş yapılıyor')) {
+          _messages.removeLast();
+        }
+
+        _activeService = fallback;
+        ApiServiceManager.setServiceType(fallback);
+
+        _messages
+            .add(ChatMessage.bot(response.message, badge: response.badgeState));
+      });
+      _scheduleScrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_messages.isNotEmpty &&
+            _messages.last.text.contains('geçiş yapılıyor')) {
+          _messages.removeLast();
+        }
+      });
+    }
+  }
+
+  String _getServiceDisplayName(ServiceType service) {
+    switch (service) {
+      case ServiceType.mcpAgent:
+        return 'MCP Agent';
+      case ServiceType.externalApi:
+        return 'External API';
+    }
+  }
+
+  Color _getServiceStatusColor() {
+    if (!_serviceHealth.anyServiceAvailable) return Colors.red;
+
+    final up = _activeService == ServiceType.mcpAgent
+        ? _serviceHealth.mcpAgentAvailable
+        : _serviceHealth.externalApiAvailable;
+
+    return up ? Colors.green : Colors.orange;
+  }
+
+  // ---- Oturum İşlemleri ----
+  Future<void> _startNewSession() async {
+    try {
+      final newId = await ApiServiceManager.startNewSession();
+      ApiServiceManager.setCurrentSessionId(newId);
+
+      setState(() {
+        _messages.clear();
+        _messages.add(
+          ChatMessage.bot(
+              '🆕 Yeni sohbet oturumu başlatıldı. Nasıl yardımcı olabilirim?',
+              badge: BotBadgeState.sekreter),
+        );
+      });
 
       if (mounted) {
-        setState(() {
-          // Thinking mesajını kaldır
-          if (_messages.isNotEmpty &&
-              _messages.last.text == 'Düşünüyorum...' &&
-              _messages.last.sender == Sender.bot) {
-            _messages.removeLast();
-          }
-
-          _messages.add(
-            ChatMessage.bot(
-              response.message,
-              badge: response.badgeState,
-            ),
-          );
-          _waitingReply = false;
-        });
-        _scheduleScrollToBottom();
-      }
-    } on McpApiException catch (e) {
-      print('❌ MCP API Hatası: ${e.message}');
-      if (mounted) {
-        setState(() {
-          // Thinking mesajını kaldır
-          if (_messages.isNotEmpty &&
-              _messages.last.text == 'Düşünüyorum...' &&
-              _messages.last.sender == Sender.bot) {
-            _messages.removeLast();
-          }
-
-          _messages.add(ChatMessage.bot(
-            'Hata: ${e.message}',
-            badge: BotBadgeState.noConnection,
-          ));
-          _waitingReply = false;
-
-          // Sunucu hatası ise durumu güncelle
-          if (e.statusCode == 0) {
-            _mcpAgentAvailable = false;
-          }
-        });
-        _scheduleScrollToBottom();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Yeni oturum başlatıldı')),
+        );
       }
     } catch (e) {
-      print('❌ Beklenmeyen hata: $e');
-      if (mounted) {
-        setState(() {
-          if (_messages.isNotEmpty &&
-              _messages.last.text == 'Düşünüyorum...' &&
-              _messages.last.sender == Sender.bot) {
-            _messages.removeLast();
-          }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Oturum başlatılırken hata: $e')),
+      );
+    }
+  }
 
-          _messages.add(ChatMessage.bot(
-            'Beklenmeyen bir hata oluştu. Lütfen tekrar dener misiniz?',
-            badge: BotBadgeState.noConnection,
-          ));
-          _waitingReply = false;
-        });
-        _scheduleScrollToBottom();
+  Future<void> _clearCurrentSession() async {
+    try {
+      await ApiServiceManager.clearCurrentSession();
+
+      setState(() {
+        _messages.clear();
+        _messages.add(
+          ChatMessage.bot(
+              '🧹 Sohbet geçmişi temizlendi. Yeni bir soruyla başlayalım!',
+              badge: BotBadgeState.sekreter),
+        );
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Geçerli oturum temizlendi')),
+        );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Temizlenemedi: $e')),
+      );
+    }
+  }
+
+  Future<void> _showSessionHistory() async {
+    try {
+      final sessions =
+          await ApiServiceManager.listSessions(userId: currentUserId);
+      if (!mounted) return;
+
+      if (sessions.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kayıtlı oturum yok')),
+        );
+        return;
+      }
+
+      final selected = await showDialog<SessionInfo>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Oturum Geçmişi'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: sessions.length,
+              itemBuilder: (_, i) {
+                final s = sessions[i];
+                return ListTile(
+                  leading: const Icon(Icons.history),
+                  title: Text(s.title ?? 'Oturum ${s.id}'),
+                  subtitle: Text(s.updatedAt?.toString() ?? ''),
+                  onTap: () => Navigator.of(ctx).pop(s),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Kapat'),
+            ),
+          ],
+        ),
+      );
+
+      if (selected != null) {
+        ApiServiceManager.setCurrentSessionId(selected.id);
+        setState(() {
+          _messages.clear();
+          _messages.add(
+            ChatMessage.bot(
+                '📂 "${selected.title ?? selected.id}" oturumu yüklendi. Devam edebilirsiniz.',
+                badge: BotBadgeState.connection),
+          );
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Oturumlar alınamadı: $e')),
+      );
     }
   }
 
@@ -324,7 +533,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Theme(
       data: theme,
       child: Scaffold(
-        backgroundColor: _pastelBg,
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           elevation: 0.5,
           centerTitle: true,
@@ -342,45 +551,155 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.smart_toy,
-                color: Colors.grey,
-                size: 20,
-              ),
+              const Icon(Icons.smart_toy, color: Colors.grey, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'CaptainBank AI',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(width: 8),
-              // MCP Agent durumu göstergesi
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: _mcpAgentAvailable && _mcpServersHealthy
-                      ? Colors.green
-                      : _mcpAgentAvailable
-                          ? Colors.orange
-                          : Colors.red,
-                  shape: BoxShape.circle,
-                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'CaptainBank AI',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    _getServiceDisplayName(_activeService),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.grey),
-              onPressed: _checkMcpAgentHealth,
-              tooltip: 'MCP Agent durumunu kontrol et',
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: _getServiceStatusColor(),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            PopupMenuButton<ServiceType>(
+              icon: const Icon(Icons.swap_horiz, color: Colors.grey),
+              tooltip: 'Servis Değiştir',
+              onSelected: _switchService,
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: ServiceType.mcpAgent,
+                  enabled: _serviceHealth.mcpAgentAvailable,
+                  child: Row(
+                    children: [
+                      Icon(Icons.memory,
+                          color: _serviceHealth.mcpAgentAvailable
+                              ? Colors.green
+                              : Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        'MCP Agent',
+                        style: TextStyle(
+                          color: _serviceHealth.mcpAgentAvailable
+                              ? Colors.black
+                              : Colors.grey,
+                        ),
+                      ),
+                      if (_activeService == ServiceType.mcpAgent)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child:
+                              Icon(Icons.check, color: Colors.green, size: 16),
+                        ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: ServiceType.externalApi,
+                  enabled: _serviceHealth.externalApiAvailable,
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud,
+                          color: _serviceHealth.externalApiAvailable
+                              ? Colors.blue
+                              : Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        'External API',
+                        style: TextStyle(
+                          color: _serviceHealth.externalApiAvailable
+                              ? Colors.black
+                              : Colors.grey,
+                        ),
+                      ),
+                      if (_activeService == ServiceType.externalApi)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child:
+                              Icon(Icons.check, color: Colors.green, size: 16),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.grey),
+              onPressed: _checkAllServicesHealth,
+              tooltip: 'Servisleri kontrol et',
+            ),
+            PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.grey),
-              onPressed: () {},
+              onSelected: (value) {
+                switch (value) {
+                  case 'new_session':
+                    _startNewSession();
+                    break;
+                  case 'session_history':
+                    _showSessionHistory();
+                    break;
+                  case 'clear_history':
+                    _clearCurrentSession();
+                    break;
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'new_session',
+                  child: Row(
+                    children: [
+                      Icon(Icons.add_circle_outline),
+                      SizedBox(width: 8),
+                      Text('Yeni Sohbet'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'session_history',
+                  child: Row(
+                    children: [
+                      Icon(Icons.history),
+                      SizedBox(width: 8),
+                      Text('Oturum Geçmişi'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'clear_history',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline),
+                      SizedBox(width: 8),
+                      Text('Geçmişi Temizle'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -391,8 +710,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 child: SafeArea(
                   child: Column(
                     children: [
-                      // MCP Agent durumu bildirimi
-                      if (!_mcpAgentAvailable)
+                      if (!_serviceHealth.anyServiceAvailable)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
@@ -403,39 +721,67 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
-                                  'MCP Agent offline. "python mcp_agent/agent_api.py" ile başlatın.',
+                                  'Hiçbir backend servisi aktif değil.',
                                   style: TextStyle(color: Colors.red),
                                 ),
                               ),
                               TextButton(
-                                onPressed: _checkMcpAgentHealth,
+                                onPressed: _checkAllServicesHealth,
                                 child: const Text('Tekrar Dene'),
                               ),
                             ],
                           ),
                         )
-                      else if (!_mcpServersHealthy)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          color: Colors.orange.shade100,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning, color: Colors.orange),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'MCP sunucuları offline. Banking servisleri sınırlı.',
-                                  style: TextStyle(color: Colors.orange),
+                      else ...[
+                        if (_activeService == ServiceType.mcpAgent &&
+                            !_serviceHealth.mcpAgentAvailable)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            color: Colors.orange.shade100,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning, color: Colors.orange),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'MCP Agent offline. External API\'ye geçebilirsiniz.',
+                                    style: TextStyle(color: Colors.orange),
+                                  ),
                                 ),
-                              ),
-                              TextButton(
-                                onPressed: _checkMcpAgentHealth,
-                                child: const Text('Kontrol Et'),
-                              ),
-                            ],
+                                TextButton(
+                                  onPressed: () =>
+                                      _switchService(ServiceType.externalApi),
+                                  child: const Text('Geç'),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        if (_activeService == ServiceType.externalApi &&
+                            !_serviceHealth.externalApiAvailable)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            color: Colors.orange.shade100,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning, color: Colors.orange),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'External API offline. MCP Agent\'a geçebilirsiniz.',
+                                    style: TextStyle(color: Colors.orange),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _switchService(ServiceType.mcpAgent),
+                                  child: const Text('Geç'),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                       Expanded(
                         child: ListView.builder(
                           controller: _scrollCtrl,
@@ -445,7 +791,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           itemCount: _messages.length + (_waitingReply ? 1 : 0),
                           itemBuilder: (context, index) {
-                            final bool typingItem =
+                            final typingItem =
                                 _waitingReply && index == _messages.length;
                             if (typingItem) {
                               return const Padding(
@@ -459,7 +805,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                       ),
                       MessageInput(
-                        enabled: !_waitingReply && _mcpAgentAvailable,
+                        enabled: !_waitingReply &&
+                            _serviceHealth.anyServiceAvailable,
                         onSend: _sendUserMessage,
                       ),
                     ],
@@ -471,15 +818,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 }
 
-// Typing indicator - MCP Agent düşünüyor
+// ---- Typing indicator ----
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return const Row(
       mainAxisAlignment: MainAxisAlignment.start,
-      children: const [
+      children: [
         CircleAvatar(
           radius: 21,
           backgroundColor: Colors.transparent,
@@ -513,7 +860,7 @@ class _TypingBubble extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         child: Text(
-          'MCP Agent çalışıyor...',
+          'Agent çalışıyor...',
           style: TextStyle(fontSize: 14, color: Colors.black87),
         ),
       ),
