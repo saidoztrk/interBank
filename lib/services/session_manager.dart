@@ -1,31 +1,55 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-// Bu sınıf, uygulama genelinde kullanılacak Session ID'yi yönetir.
 class SessionManager {
-  static const String _sessionIdKey = 'session_id';
-  static final _uuid = Uuid();
-  static String? _sessionId;
+  static SharedPreferences? _prefs;
 
-  // Session ID'yi dışarıdan almak için kullanılan getter metodu.
-  static String get sessionId {
-    if (_sessionId == null) {
-      throw Exception("Session ID is not initialized. Call initialize() first.");
+  static const String _kSessionId = 'session_id';
+  static const String _kCustomerNo = 'customer_no';
+  static const String _kUsername = 'username';
+
+  static Future<void> initialize() async {
+    _prefs = await SharedPreferences.getInstance();
+    final existing = _prefs?.getString(_kSessionId);
+    if (existing == null || existing.isEmpty) {
+      final newId = const Uuid().v4();
+      await _prefs?.setString(_kSessionId, newId);
     }
-    return _sessionId!;
   }
 
-  // Bu fonksiyon, uygulamanın başlangıcında bir kez çağrılmalıdır.
-  static Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    _sessionId = prefs.getString(_sessionIdKey);
-
-    if (_sessionId == null) {
-      _sessionId = _uuid.v4();
-      await prefs.setString(_sessionIdKey, _sessionId!);
-      print('Yeni Session ID oluşturuldu: $_sessionId');
-    } else {
-      print('Mevcut Session ID kullanılıyor: $_sessionId');
+  static String get sessionId {
+    final id = _prefs?.getString(_kSessionId);
+    if (id == null || id.isEmpty) {
+      throw Exception(
+          "Session ID is not initialized. Call initialize() first.");
     }
+    return id;
+  }
+
+  static Future<void> saveUsername(String? username) async {
+    if (username == null) {
+      await _prefs?.remove(_kUsername);
+    } else {
+      await _prefs?.setString(_kUsername, username);
+    }
+  }
+
+  static String? get username => _prefs?.getString(_kUsername);
+
+  static Future<void> saveCustomerNo(int? customerNo) async {
+    if (customerNo == null) {
+      await _prefs?.remove(_kCustomerNo);
+    } else {
+      await _prefs?.setInt(_kCustomerNo, customerNo);
+    }
+  }
+
+  static int? get customerNo {
+    if (!(_prefs?.containsKey(_kCustomerNo) ?? false)) return null;
+    return _prefs?.getInt(_kCustomerNo);
+  }
+
+  static Future<void> clearAll() async {
+    await _prefs?.clear();
   }
 }

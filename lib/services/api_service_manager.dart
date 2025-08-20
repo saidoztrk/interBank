@@ -40,38 +40,42 @@ class ApiServiceManager {
   /// Tek giriş noktası: uygun servise yönlendir
   static Future<UniversalChatResponse> sendMessage({
     required String message,
-    required int userId,
+    int? customerNo, // ✅ takım1 ise 17953063 gelecek; yoksa null olabilir
     String? sessionId,
     ServiceType? serviceType,
   }) async {
     final target = serviceType ?? _currentService;
     switch (target) {
       case ServiceType.mcpAgent:
-        return _sendToMcpAgent(message, userId, sessionId);
+        return _sendToMcpAgent(message, customerNo, sessionId);
       case ServiceType.externalApi:
-        return _sendToExternalApi(message, userId, sessionId);
+        // Dış serviste eski sözleşme userId bekliyorsa istersen burada map’leyebilirsin.
+        return _sendToExternalApi(message, customerNo, sessionId);
     }
   }
 
   /// MCP Agent (Python - 8081) /chat
+  /// Beklenen body: { "message": string, "customerNo": int? }
   static Future<UniversalChatResponse> _sendToMcpAgent(
     String message,
-    int userId,
+    int? customerNo,
     String? sessionId,
   ) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/chat');
-      final body = {
-        'user_id': userId,
+      final body = <String, dynamic>{
         'message': message,
+        if (customerNo != null)
+          'customerNo': customerNo, // ✅ agent_api.py ile uyumlu
         if (sessionId != null || _currentSessionId != null)
-          'session_id': sessionId ?? _currentSessionId,
+          'sessionId': sessionId ??
+              _currentSessionId, // agent şu an bunu kullanmıyor; opsiyonel
       };
 
       final resp = await http
           .post(
             url,
-            headers: {
+            headers: const {
               'Content-Type': 'application/json; charset=utf-8',
               'Accept': 'application/json',
             },
@@ -82,15 +86,21 @@ class ApiServiceManager {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         if (data['success'] == true) {
-          _currentSessionId = data['session_id'];
+          final reply = (data['response'] ?? '').toString();
+          final ts = data['timestamp'] ?? DateTime.now().toIso8601String();
+
+          // agent_api şu an session_id / message_id döndürmüyor -> lokal üret
+          final sid = _currentSessionId ?? sessionId ?? '';
+          final mid = _generateMessageId();
+
           return UniversalChatResponse(
             success: true,
-            message: data['response'] ?? '',
-            sessionId: data['session_id'] ?? '',
-            messageId: data['message_id'] ?? '',
+            message: reply,
+            sessionId: sid,
+            messageId: mid,
             serviceType: ServiceType.mcpAgent,
-            badgeState: _determineBadgeFromContent(data['response'] ?? ''),
-            timestamp: data['timestamp'] ?? DateTime.now().toIso8601String(),
+            badgeState: _determineBadgeFromContent(reply),
+            timestamp: ts,
           );
         } else {
           throw ApiException(data['error']?['message'] ?? 'MCP Agent hatası');
@@ -105,15 +115,17 @@ class ApiServiceManager {
   }
 
   /// External FastAPI (ekip - 8083) /chat
+  /// Not: Bu servis farklı sözleşme kullanıyorsa ihtiyaca göre düzenle.
   static Future<UniversalChatResponse> _sendToExternalApi(
     String message,
-    int userId,
+    int? customerNo,
     String? sessionId,
   ) async {
     try {
       final url = Uri.parse('$_externalApiUrl/chat');
       final body = {
-        'user_id': userId,
+        // Ekip sözleşmesi user_id isteyebilir; customerNo’yu oraya mapliyoruz:
+        if (customerNo != null) 'user_id': customerNo,
         'message': message,
         'session_id': sessionId ?? _currentSessionId,
         'timestamp': DateTime.now().toIso8601String(),
@@ -124,7 +136,7 @@ class ApiServiceManager {
       final resp = await http
           .post(
             url,
-            headers: {
+            headers: const {
               'Content-Type': 'application/json; charset=utf-8',
               'Accept': 'application/json',
             },
@@ -195,7 +207,7 @@ class ApiServiceManager {
       final url = Uri.parse('$_mcpAgentUrl/session/new');
       final resp = await http
           .post(url,
-              headers: {'Content-Type': 'application/json'},
+              headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'session_id': sessionId}))
           .timeout(_healthTimeout);
       if (resp.statusCode != 200 && resp.statusCode != 201) {
@@ -212,7 +224,7 @@ class ApiServiceManager {
       final url = Uri.parse('$_externalApiUrl/session/new');
       final resp = await http
           .post(url,
-              headers: {'Content-Type': 'application/json'},
+              headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'session_id': sessionId}))
           .timeout(_healthTimeout);
       if (resp.statusCode != 200 && resp.statusCode != 201) {
@@ -246,7 +258,7 @@ class ApiServiceManager {
     }
   }
 
-  // Python gerçek endpoint'i: POST /sessions/{session_id}/close
+  // Python gerçek endpoint'i: POST /sessions/{session_id}/close (bizde yok; no-op)
   static Future<void> _clearMcpAgentSession(String sessionId) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/sessions/$sessionId/close');
@@ -268,7 +280,7 @@ class ApiServiceManager {
   }
 
   /// Oturum listesi
-  // Python gerçek endpoint'i: GET /sessions/{user_id}
+  // Python gerçek endpoint'i: GET /sessions/{user_id} (bizde yok; no-op)
   static Future<List<SessionInfo>> listSessions({
     ServiceType? serviceType,
     required int userId,
@@ -288,9 +300,8 @@ class ApiServiceManager {
     return [];
   }
 
-  static Future<List<SessionInfo>> _listMcpAgentSessions({
-    required int userId,
-  }) async {
+  static Future<List<SessionInfo>> _listMcpAgentSessions(
+      {required int userId}) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/sessions/$userId');
       final resp = await http.get(url).timeout(_healthTimeout);

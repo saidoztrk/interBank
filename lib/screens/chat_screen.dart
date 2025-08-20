@@ -7,6 +7,7 @@ import '../models/session_info.dart';
 import '../models/message_model.dart';
 import '../models/bot_badge_state.dart';
 import '../services/api_service_manager.dart';
+import '../services/session_manager.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import 'no_connection_screen.dart';
@@ -48,9 +49,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   ServiceType _activeService = ServiceType.mcpAgent;
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
-
-  // User ID (login'den gelecek; şimdilik sabit)
-  int get currentUserId => 12345;
 
   // Scroll titremesini azaltmak için throttle
   bool _scrollScheduled = false;
@@ -302,7 +300,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     try {
       final response = await ApiServiceManager.sendMessage(
         message: trimmed,
-        userId: currentUserId,
+        customerNo:
+            SessionManager.customerNo, // ✅ Team1 ise 17953063; diğerleri null
+        sessionId: ApiServiceManager.getCurrentSessionId(),
         serviceType: _activeService,
       );
 
@@ -357,7 +357,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       final response = await ApiServiceManager.sendMessage(
         message: message,
-        userId: currentUserId,
+        customerNo: SessionManager.customerNo,
+        sessionId: ApiServiceManager.getCurrentSessionId(),
         serviceType: fallback,
       );
 
@@ -462,8 +463,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _showSessionHistory() async {
     try {
-      final sessions =
-          await ApiServiceManager.listSessions(userId: currentUserId);
+      final sessions = await ApiServiceManager.listSessions(
+          userId: SessionManager.customerNo ?? 0);
       if (!mounted) return;
 
       if (sessions.isEmpty) {

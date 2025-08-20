@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/session_manager.dart';
 
 class BankStyleLoginScreen extends StatefulWidget {
   const BankStyleLoginScreen({super.key});
@@ -83,10 +84,15 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       scrollDirection: Axis.horizontal,
                       children: const [
-                        _TopShortcut(icon: Icons.verified_user, label: "Güvenlik"),
-                        _TopShortcut(icon: Icons.account_balance_wallet, label: "Yatırım"),
-                        _TopShortcut(icon: Icons.local_offer, label: "Pazarama"),
-                        _TopShortcut(icon: Icons.business_center, label: "Genç KOBİ"),
+                        _TopShortcut(
+                            icon: Icons.verified_user, label: "Güvenlik"),
+                        _TopShortcut(
+                            icon: Icons.account_balance_wallet,
+                            label: "Yatırım"),
+                        _TopShortcut(
+                            icon: Icons.local_offer, label: "Pazarama"),
+                        _TopShortcut(
+                            icon: Icons.business_center, label: "Genç KOBİ"),
                         _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
                       ],
                     ),
@@ -100,7 +106,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                         Expanded(
                           child: PageView(
                             controller: _pageController,
-                            onPageChanged: (i) => setState(() => _pageIndex = i),
+                            onPageChanged: (i) =>
+                                setState(() => _pageIndex = i),
                             children: [
                               // 0: Var olan kullanıcı (PIN ile)
                               _ExistingUserCard(
@@ -109,7 +116,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                                 onLogin: _onLoginPressed,
                                 users: _users,
                                 selectedUserIndex: _selectedUser,
-                                onPickUser: (i) => setState(() => _selectedUser = i),
+                                onPickUser: (i) =>
+                                    setState(() => _selectedUser = i),
                               ),
 
                               // 1: Yeni kullanıcı
@@ -128,7 +136,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                             2,
                             (i) => AnimatedContainer(
                               duration: const Duration(milliseconds: 250),
-                              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 3, vertical: 8),
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
@@ -168,10 +177,26 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
               if (pin.length >= 6) return;
               setSheetState(() => pin += d);
               if (pin.length == 6) {
-                Future.delayed(const Duration(milliseconds: 150), () {
+                Future.delayed(const Duration(milliseconds: 150), () async {
                   if (pin == "123456") {
-                    Navigator.of(context).pop();
-                    Navigator.pushReplacementNamed(context, '/home');
+                    final uname = currentUserName
+                        .trim()
+                        .toLowerCase()
+                        .replaceAll(' ', '');
+                    await SessionManager.saveUsername(currentUserName);
+                    if (uname == 'team1' ||
+                        uname == 'takım1' ||
+                        uname == 'takim1') {
+                      await SessionManager.saveCustomerNo(
+                          17953063); // ✅ Team 1 → 17953063
+                    } else {
+                      await SessionManager.saveCustomerNo(
+                          null); // diğerleri temiz
+                    }
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      Navigator.pushReplacementNamed(context, '/home');
+                    }
                   } else {
                     HapticFeedback.mediumImpact();
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -193,7 +218,9 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
             return Container(
               padding: EdgeInsets.only(
-                left: 18, right: 18, top: 12,
+                left: 18,
+                right: 18,
+                top: 12,
                 bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
               ),
               decoration: const BoxDecoration(
@@ -204,34 +231,38 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 44, height: 5,
+                    width: 44,
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.black12, borderRadius: BorderRadius.circular(3),
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                   const SizedBox(height: 14),
                   Text(
                     "Şifre • $currentUserName",
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(
                       6,
                       (i) => Container(
                         margin: const EdgeInsets.symmetric(horizontal: 6),
-                        width: 14, height: 14,
+                        width: 14,
+                        height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: i < pin.length ? const Color(0xFF0C5DB1) : Colors.black12,
+                          color: i < pin.length
+                              ? const Color(0xFF0C5DB1)
+                              : Colors.black12,
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
-
                   _NumberPad(
                     onDigit: addDigit,
                     onBackspace: removeDigit,
@@ -259,7 +290,9 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
         return Container(
           padding: EdgeInsets.only(
-            left: 18, right: 18, top: 12,
+            left: 18,
+            right: 18,
+            top: 12,
             bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
           ),
           decoration: const BoxDecoration(
@@ -280,7 +313,6 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-
                 TextFormField(
                   controller: tc,
                   keyboardType: TextInputType.number,
@@ -301,12 +333,16 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   validator: _required,
                 ),
                 const SizedBox(height: 16),
-
                 _primaryAction(
                   label: "GİRİŞ",
-                  onPressed: () {
+                  onPressed: () async {
                     if (formKey.currentState!.validate()) {
-                      if (tc.text.trim() == "100200300" && pw.text.trim() == "123456") {
+                      if (tc.text.trim() == "100200300" &&
+                          pw.text.trim() == "123456") {
+                        await SessionManager.saveUsername('Bireysel');
+                        await SessionManager.saveCustomerNo(
+                            null); // Team1 değil → temizle
+                        if (!mounted) return;
                         Navigator.pop(context);
                         Navigator.pushReplacementNamed(context, '/home');
                       } else {
@@ -342,7 +378,9 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
         return Container(
           padding: EdgeInsets.only(
-            left: 18, right: 18, top: 12,
+            left: 18,
+            right: 18,
+            top: 12,
             bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
           ),
           decoration: const BoxDecoration(
@@ -363,7 +401,6 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-
                 TextFormField(
                   controller: vkn,
                   keyboardType: TextInputType.number,
@@ -393,14 +430,17 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   validator: _required,
                 ),
                 const SizedBox(height: 16),
-
                 _primaryAction(
                   label: "GİRİŞ",
-                  onPressed: () {
+                  onPressed: () async {
                     if (formKey.currentState!.validate()) {
                       if (vkn.text.trim() == "1112223334" &&
                           user.text.trim() == "team" &&
                           pw.text.trim() == "654321") {
+                        await SessionManager.saveUsername('Ticari');
+                        await SessionManager.saveCustomerNo(
+                            null); // Team1 değil → temizle
+                        if (!mounted) return;
                         Navigator.pop(context);
                         Navigator.pushReplacementNamed(context, '/home');
                       } else {
@@ -423,7 +463,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
   }
 
   // ----- Helpers -----
-  InputDecoration _filledDecoration({required String label, required IconData icon}) {
+  InputDecoration _filledDecoration(
+      {required String label, required IconData icon}) {
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon),
@@ -433,9 +474,11 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     );
   }
 
-  String? _required(String? v) => (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null;
+  String? _required(String? v) =>
+      (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null;
 
-  Widget _primaryAction({required String label, required VoidCallback onPressed}) {
+  Widget _primaryAction(
+      {required String label, required VoidCallback onPressed}) {
     return SizedBox(
       height: 52,
       child: ElevatedButton(
@@ -443,10 +486,12 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0C5DB1),
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        child: Text(label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -459,8 +504,10 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
   Widget _sheetHandle() => Center(
         child: Container(
-          width: 44, height: 5,
-          decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+          width: 44,
+          height: 5,
+          decoration: BoxDecoration(
+              color: Colors.black12, borderRadius: BorderRadius.circular(3)),
         ),
       );
 }
@@ -480,7 +527,8 @@ class _TopShortcut extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 52, height: 52,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.20),
               border: Border.all(color: Colors.white.withOpacity(0.4)),
@@ -530,7 +578,8 @@ class _ExistingUserCard extends StatelessWidget {
           backgroundColor: Colors.white,
           child: const CircleAvatar(
             radius: 43,
-            backgroundImage: AssetImage('lib/assets/images/person/teamwork.png'),
+            backgroundImage:
+                AssetImage('lib/assets/images/person/teamwork.png'),
           ),
         ),
         const SizedBox(height: 14),
@@ -542,7 +591,9 @@ class _ExistingUserCard extends StatelessWidget {
             Text(
               name,
               style: const TextStyle(
-                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700,
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(width: 6),
@@ -563,7 +614,8 @@ class _ExistingUserCard extends StatelessWidget {
                       value: i,
                       child: Row(
                         children: [
-                          if (i == selectedUserIndex) const Icon(Icons.check, size: 18),
+                          if (i == selectedUserIndex)
+                            const Icon(Icons.check, size: 18),
                           if (i == selectedUserIndex) const SizedBox(width: 6),
                           Text(users[i]),
                         ],
@@ -588,16 +640,19 @@ class _ExistingUserCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: SizedBox(
-            width: double.infinity, height: 54,
+            width: double.infinity,
+            height: 54,
             child: ElevatedButton(
               onPressed: onLogin,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF7BC6FF),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const Text("GİRİŞ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              child: const Text("GİRİŞ",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
           ),
         ),
@@ -638,7 +693,9 @@ class _NewUserCard extends StatelessWidget {
         const Text(
           "Yeni Kullanıcı",
           style: TextStyle(
-            color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700,
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 4),
@@ -647,14 +704,16 @@ class _NewUserCard extends StatelessWidget {
           style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 15),
         ),
         const SizedBox(height: 22),
-
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Row(
             children: [
-              Expanded(child: _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
+              Expanded(
+                  child:
+                      _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
               const SizedBox(width: 12),
-              Expanded(child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
+              Expanded(
+                  child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
             ],
           ),
         ),
@@ -689,10 +748,12 @@ class _PrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF0C5DB1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        child: Text(label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -712,9 +773,12 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
         children: [
           Row(
             children: const [
-              Expanded(child: _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
+              Expanded(
+                  child:
+                      _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
               SizedBox(width: 12),
-              Expanded(child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
+              Expanded(
+                  child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
             ],
           ),
           const SizedBox(height: 16),
@@ -722,7 +786,8 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: const [
               _QuickTile(icon: Icons.flash_on, label: "FAST\nİşlemleri"),
-              _QuickTile(icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
+              _QuickTile(
+                  icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
               _QuickTile(icon: Icons.qr_code_2, label: "Karekod\nİşlemleri"),
               _QuickTile(icon: Icons.more_horiz, label: "Daha\nFazlası"),
             ],
@@ -730,8 +795,10 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
           const SizedBox(height: 8),
           Container(
             margin: const EdgeInsets.only(top: 10, bottom: 4),
-            width: 120, height: 5,
-            decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+            width: 120,
+            height: 5,
+            decoration: BoxDecoration(
+                color: Colors.black12, borderRadius: BorderRadius.circular(3)),
           ),
         ],
       ),
@@ -757,7 +824,9 @@ class _InfoCard extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFF0C5DB1)),
           const SizedBox(width: 10),
-          Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -775,7 +844,8 @@ class _QuickTile extends StatelessWidget {
       children: [
         Icon(icon, color: const Color(0xFF0C5DB1), size: 28),
         const SizedBox(height: 6),
-        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+        Text(label,
+            textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
@@ -795,10 +865,18 @@ class _NumberPad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final keys = [
-      '1','2','3',
-      '4','5','6',
-      '7','8','9',
-      'close','0','back',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      'close',
+      '0',
+      'back',
     ];
 
     return GridView.builder(
@@ -806,14 +884,18 @@ class _NumberPad extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: keys.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.4,
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1.4,
       ),
       padding: const EdgeInsets.only(bottom: 10),
       itemBuilder: (_, i) {
         final k = keys[i];
         if (k == 'close') {
           return _PadButton(
-            child: const Text("KAPAT", style: TextStyle(fontWeight: FontWeight.w600)),
+            child: const Text("KAPAT",
+                style: TextStyle(fontWeight: FontWeight.w600)),
             onTap: onClose,
           );
         }
@@ -824,7 +906,9 @@ class _NumberPad extends StatelessWidget {
           );
         }
         return _PadButton(
-          child: Text(k, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          child: Text(k,
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           onTap: () => onDigit(k),
         );
       },
