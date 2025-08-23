@@ -1,16 +1,21 @@
-// lib/screens/chat_screen.dart
+// lib/screens/chat_screen.dart — GÜNCEL İMPORTLAR
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import '../models/session_info.dart';
-import '../models/message_model.dart';
-import '../models/bot_badge_state.dart';
-import '../services/api_service_manager.dart';
-import '../services/session_manager.dart';
-import '../widgets/chat_bubble.dart';
-import '../widgets/message_input.dart';
-import 'no_connection_screen.dart';
+// 👉 QR entegrasyonu (package import)
+import 'package:interbank/qr/qr_intents.dart' show isQrPayIntent, QRPaymentData;
+import 'package:interbank/qr/qr_scan_screen.dart';
+
+// Servis & modeller (package import)
+import 'package:interbank/models/session_info.dart';
+import 'package:interbank/models/message_model.dart';
+import 'package:interbank/models/bot_badge_state.dart';
+import 'package:interbank/services/api_service_manager.dart';
+import 'package:interbank/services/session_manager.dart';
+import 'package:interbank/widgets/chat_bubble.dart';
+import 'package:interbank/widgets/message_input.dart';
+import 'package:interbank/screens/no_connection_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? initialSessionId;
@@ -248,6 +253,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
+    // 👉 QR niyeti
+    if (isQrPayIntent(trimmed)) {
+      setState(() {
+        _messages.add(ChatMessage.user(trimmed));
+      });
+      _scheduleScrollToBottom();
+      await _startQrFlow();
+      return;
+    }
+
     // Bağlantı kontrol
     if (!_hasConnection) {
       setState(() {
@@ -282,7 +297,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         : _serviceHealth.externalApiAvailable;
 
     if (!currentServiceUp) {
-      // Uygun olana otomatik geç
       if (_serviceHealth.mcpAgentAvailable) {
         _switchService(ServiceType.mcpAgent);
       } else if (_serviceHealth.externalApiAvailable) {
@@ -300,8 +314,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     try {
       final response = await ApiServiceManager.sendMessage(
         message: trimmed,
-        customerNo:
-            SessionManager.customerNo, // ✅ Team1 ise 17953063; diğerleri null
+        customerNo: SessionManager.customerNo,
         sessionId: ApiServiceManager.getCurrentSessionId(),
         serviceType: _activeService,
       );
@@ -321,8 +334,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _waitingReply = false;
       });
       _scheduleScrollToBottom();
-
-      // Fallback dene
       await _tryFallbackService(trimmed);
     } catch (_) {
       if (!mounted) return;
@@ -522,6 +533,175 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  // ====== QR FLOW (scan -> confirm -> pay) ======
+  Future<void> _startQrFlow() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => QRScanScreen()), // const kaldırıldı
+    );
+
+    if (!mounted) return;
+
+    if (result == null) {
+      setState(() {
+        _messages.add(ChatMessage.bot("QR okutma iptal edildi."));
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+
+    // Tür yükseltmeyi korumak için yeni değişken:
+    final r = result;
+    if (r is! QRPaymentData) {
+      setState(() {
+        _messages.add(ChatMessage.bot("Geçersiz QR verisi alındı."));
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+    final data = r; // QRPaymentData
+
+    // Tutarı kesinleştir (null-safe)
+    double amount = data.amount ?? 0;
+    if (amount <= 0) {
+      final entered = await _askAmount();
+      if (entered == null || entered <= 0) {
+        setState(() {
+          _messages.add(ChatMessage.bot("Tutar girilmedi, işlem iptal."));
+        });
+        _scheduleScrollToBottom();
+        return;
+      }
+      amount = entered;
+    }
+
+    final ok = await _askConfirm(
+      receiverName: data.receiverName,
+      iban: data.receiverIban,
+      amount: amount,
+      note: data.note,
+    );
+    if (ok != true) {
+      setState(() {
+        _messages.add(ChatMessage.bot("Ödeme iptal edildi."));
+      });
+      _scheduleScrollToBottom();
+      return;
+    }
+
+    await _payQr(
+      receiverIban: data.receiverIban,
+      receiverName: data.receiverName,
+      amount: amount,
+      note: data.note,
+    );
+  }
+
+  Future<bool?> _askConfirm({
+    required String receiverName,
+    required String iban,
+    required double amount,
+    String? note,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Ödeme Onayı"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Alıcı: $receiverName"),
+            Text("IBAN: $iban"),
+            Text("Tutar: ${amount.toStringAsFixed(2)} TL"),
+            if (note != null && note.isNotEmpty) Text("Açıklama: $note"),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("İptal")),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Onayla")),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _payQr({
+    required String receiverIban,
+    required String receiverName,
+    required double amount,
+    String? note,
+  }) async {
+    setState(() {
+      _messages.add(ChatMessage.bot("Ödeme işleniyor…"));
+    });
+    _scheduleScrollToBottom();
+
+    try {
+      final resp = await ApiServiceManager.payQr(
+        receiverIban: receiverIban,
+        receiverName: receiverName,
+        amount: amount,
+        note: note,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage.bot(
+            "✅ Ödeme tamamlandı\n"
+            "Referans: ${resp.reference}\n"
+            "Tutar: ${resp.amount.toStringAsFixed(2)} TL\n"
+            "Alıcı: ${resp.receiverName}",
+          ),
+        );
+      });
+    } on ApiServiceException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage.bot("❌ QR ödeme hatası: ${e.message}"),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage.bot("❌ Ödeme başarısız: $e"),
+        );
+      });
+    }
+    _scheduleScrollToBottom();
+  }
+
+  Future<double?> _askAmount() async {
+    final ctrl = TextEditingController();
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Tutar gir"),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(hintText: "Örn: 150.75"),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
+          ElevatedButton(
+            onPressed: () {
+              final v = double.tryParse(ctrl.text.replaceAll(",", "."));
+              Navigator.pop(ctx, v);
+            },
+            child: const Text("Tamam"),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---- Build ----
   @override
   Widget build(BuildContext context) {
@@ -614,8 +794,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       if (_activeService == ServiceType.mcpAgent)
                         const Padding(
                           padding: EdgeInsets.only(left: 6),
-                          child:
-                              Icon(Icons.check, color: Colors.green, size: 16),
+                          child: Icon(Icons.check, color: Colors.green, size: 16),
                         ),
                     ],
                   ),
@@ -641,8 +820,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       if (_activeService == ServiceType.externalApi)
                         const Padding(
                           padding: EdgeInsets.only(left: 6),
-                          child:
-                              Icon(Icons.check, color: Colors.green, size: 16),
+                          child: Icon(Icons.check, color: Colors.green, size: 16),
                         ),
                     ],
                   ),

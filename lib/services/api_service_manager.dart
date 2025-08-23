@@ -1,15 +1,16 @@
 // lib/services/api_service_manager.dart
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'dart:math';
+
 
 import '../models/bot_badge_state.dart';
 import '../models/message_model.dart';
 import '../models/session_info.dart';
 
 enum ServiceType {
-  mcpAgent, // Python Enhanced MCP Agent (8081)
-  externalApi, // Ekibin FastAPI servisi (8083)
+  mcpAgent,     // Python Enhanced MCP Agent (8081)
+  externalApi,  // Ekibin FastAPI servisi (8083)
 }
 
 class ApiServiceManager {
@@ -18,29 +19,26 @@ class ApiServiceManager {
   static const String _externalApiUrl = 'http://10.0.2.2:8083';
 
   // Zaman aşımı ayarları
-  static const Duration _timeout =
-      Duration(seconds: 35); // /chat gibi ağır istekler
-  static const Duration _healthTimeout = Duration(seconds: 5); // /health vb.
+  static const Duration _timeout = Duration(seconds: 35);
+  static const Duration _healthTimeout = Duration(seconds: 5);
 
   // Oturum yönetimi
   static String? _currentSessionId;
   static ServiceType _currentService = ServiceType.mcpAgent;
 
   // Aktif servis
-  static void setServiceType(ServiceType serviceType) =>
-      _currentService = serviceType;
+  static void setServiceType(ServiceType serviceType) => _currentService = serviceType;
   static ServiceType getCurrentServiceType() => _currentService;
 
   // Oturum ID referansı
   static String? getCurrentSessionId() => _currentSessionId;
-  static void setCurrentSessionId(String sessionId) =>
-      _currentSessionId = sessionId;
+  static void setCurrentSessionId(String sessionId) => _currentSessionId = sessionId;
   static void clearCurrentSessionReference() => _currentSessionId = null;
 
-  /// Tek giriş noktası: uygun servise yönlendir
+  /// ---- Chat: Tek giriş noktası ----
   static Future<UniversalChatResponse> sendMessage({
     required String message,
-    int? customerNo, // ✅ takım1 ise 17953063 gelecek; yoksa null olabilir
+    int? customerNo,
     String? sessionId,
     ServiceType? serviceType,
   }) async {
@@ -49,13 +47,11 @@ class ApiServiceManager {
       case ServiceType.mcpAgent:
         return _sendToMcpAgent(message, customerNo, sessionId);
       case ServiceType.externalApi:
-        // Dış serviste eski sözleşme userId bekliyorsa istersen burada map’leyebilirsin.
         return _sendToExternalApi(message, customerNo, sessionId);
     }
   }
 
   /// MCP Agent (Python - 8081) /chat
-  /// Beklenen body: { "message": string, "customerNo": int? }
   static Future<UniversalChatResponse> _sendToMcpAgent(
     String message,
     int? customerNo,
@@ -65,11 +61,9 @@ class ApiServiceManager {
       final url = Uri.parse('$_mcpAgentUrl/chat');
       final body = <String, dynamic>{
         'message': message,
-        if (customerNo != null)
-          'customerNo': customerNo, // ✅ agent_api.py ile uyumlu
+        if (customerNo != null) 'customerNo': customerNo,
         if (sessionId != null || _currentSessionId != null)
-          'sessionId': sessionId ??
-              _currentSessionId, // agent şu an bunu kullanmıyor; opsiyonel
+          'sessionId': sessionId ?? _currentSessionId,
       };
 
       final resp = await http
@@ -89,7 +83,6 @@ class ApiServiceManager {
           final reply = (data['response'] ?? '').toString();
           final ts = data['timestamp'] ?? DateTime.now().toIso8601String();
 
-          // agent_api şu an session_id / message_id döndürmüyor -> lokal üret
           final sid = _currentSessionId ?? sessionId ?? '';
           final mid = _generateMessageId();
 
@@ -115,7 +108,6 @@ class ApiServiceManager {
   }
 
   /// External FastAPI (ekip - 8083) /chat
-  /// Not: Bu servis farklı sözleşme kullanıyorsa ihtiyaca göre düzenle.
   static Future<UniversalChatResponse> _sendToExternalApi(
     String message,
     int? customerNo,
@@ -124,7 +116,6 @@ class ApiServiceManager {
     try {
       final url = Uri.parse('$_externalApiUrl/chat');
       final body = {
-        // Ekip sözleşmesi user_id isteyebilir; customerNo’yu oraya mapliyoruz:
         if (customerNo != null) 'user_id': customerNo,
         'message': message,
         'session_id': sessionId ?? _currentSessionId,
@@ -163,9 +154,7 @@ class ApiServiceManager {
             serviceType: ServiceType.externalApi,
             badgeState: _determineBadgeFromContent(responseMessage),
             timestamp: data['timestamp'] ?? DateTime.now().toIso8601String(),
-            metadata: (data['metadata'] is Map<String, dynamic>)
-                ? data['metadata']
-                : null,
+            metadata: (data['metadata'] is Map<String, dynamic>) ? data['metadata'] : null,
           );
         } else {
           throw ApiException(data['error'] ?? 'External API hatası');
@@ -187,53 +176,40 @@ class ApiServiceManager {
     try {
       switch (target) {
         case ServiceType.mcpAgent:
-          await _startMcpAgentSession(newId); // Python'da yok → no-op/deneme
+          await _startMcpAgentSession(newId);
           break;
         case ServiceType.externalApi:
-          await _startExternalApiSession(newId); // varsa kullanılacak
+          await _startExternalApiSession(newId);
           break;
       }
       _currentSessionId = newId;
       return newId;
     } catch (_) {
-      _currentSessionId = newId; // localde set et
+      _currentSessionId = newId;
       return newId;
     }
   }
 
   static Future<void> _startMcpAgentSession(String sessionId) async {
-    // Python Enhanced MCP Agent'ta 'session/new' yok. No-op deneme bırakıldı.
     try {
       final url = Uri.parse('$_mcpAgentUrl/session/new');
-      final resp = await http
+      await http
           .post(url,
               headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'session_id': sessionId}))
           .timeout(_healthTimeout);
-      if (resp.statusCode != 200 && resp.statusCode != 201) {
-        // no-op
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ MCP Agent session başlatma hatası (opsiyonel): $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> _startExternalApiSession(String sessionId) async {
     try {
       final url = Uri.parse('$_externalApiUrl/session/new');
-      final resp = await http
+      await http
           .post(url,
               headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'session_id': sessionId}))
           .timeout(_healthTimeout);
-      if (resp.statusCode != 200 && resp.statusCode != 201) {
-        // no-op
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ External API session başlatma hatası: $e');
-    }
+    } catch (_) {}
   }
 
   /// Geçerli oturumu temizle (backend + local)
@@ -250,37 +226,27 @@ class ApiServiceManager {
           await _clearExternalApiSession(_currentSessionId!);
           break;
       }
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ Session temizleme hatası: $e');
+    } catch (_) {
     } finally {
       _currentSessionId = null;
     }
   }
 
-  // Python gerçek endpoint'i: POST /sessions/{session_id}/close (bizde yok; no-op)
   static Future<void> _clearMcpAgentSession(String sessionId) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/sessions/$sessionId/close');
       await http.post(url).timeout(_healthTimeout);
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ MCP Agent session temizleme hatası: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> _clearExternalApiSession(String sessionId) async {
     try {
       final url = Uri.parse('$_externalApiUrl/session/$sessionId/clear');
       await http.delete(url).timeout(_healthTimeout);
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ External API session temizleme hatası: $e');
-    }
+    } catch (_) {}
   }
 
   /// Oturum listesi
-  // Python gerçek endpoint'i: GET /sessions/{user_id} (bizde yok; no-op)
   static Future<List<SessionInfo>> listSessions({
     ServiceType? serviceType,
     required int userId,
@@ -293,15 +259,11 @@ class ApiServiceManager {
         case ServiceType.externalApi:
           return _listExternalApiSessions();
       }
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ Session listesi alma hatası: $e');
-    }
+    } catch (_) {}
     return [];
   }
 
-  static Future<List<SessionInfo>> _listMcpAgentSessions(
-      {required int userId}) async {
+  static Future<List<SessionInfo>> _listMcpAgentSessions({required int userId}) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/sessions/$userId');
       final resp = await http.get(url).timeout(_healthTimeout);
@@ -310,12 +272,8 @@ class ApiServiceManager {
         final sessions = data['sessions'] as List? ?? [];
         return sessions.map((s) => SessionInfo.fromJson(s)).toList();
       }
-      return [];
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ MCP Agent sessions listesi hatası: $e');
-      return [];
-    }
+    } catch (_) {}
+    return [];
   }
 
   static Future<List<SessionInfo>> _listExternalApiSessions() async {
@@ -327,12 +285,8 @@ class ApiServiceManager {
         final sessions = data['sessions'] as List? ?? [];
         return sessions.map((s) => SessionInfo.fromJson(s)).toList();
       }
-      return [];
-    } catch (e) {
-      // ignore: avoid_print
-      print('⚠️ External API sessions listesi hatası: $e');
-      return [];
-    }
+    } catch (_) {}
+    return [];
   }
 
   /// Sağlık kontrolleri
@@ -341,9 +295,7 @@ class ApiServiceManager {
       final url = Uri.parse('$_externalApiUrl/health');
       final resp = await http.get(url).timeout(_healthTimeout);
       return resp.statusCode == 200;
-    } catch (e) {
-      // ignore: avoid_print
-      print('❌ External API Health Check Hatası: $e');
+    } catch (_) {
       return false;
     }
   }
@@ -353,9 +305,7 @@ class ApiServiceManager {
       final url = Uri.parse('$_mcpAgentUrl/health');
       final resp = await http.get(url).timeout(_healthTimeout);
       return resp.statusCode == 200;
-    } catch (e) {
-      // ignore: avoid_print
-      print('❌ MCP Agent Health Check Hatası: $e');
+    } catch (_) {
       return false;
     }
   }
@@ -371,7 +321,80 @@ class ApiServiceManager {
     );
   }
 
-  // Yardımcılar
+  // ===== QR PAYMENT (External API) =====
+  static Future<QRPayResponse> payQr({
+    required String receiverIban,
+    required String receiverName,
+    required double amount,
+    String? note,
+    ServiceType? serviceType,
+    bool forceExternal = true,
+  }) async {
+    final target = forceExternal ? ServiceType.externalApi : (serviceType ?? _currentService);
+    if (target == ServiceType.mcpAgent) {
+      throw const ApiException('MCP Agent şu an QR ödemeyi desteklemiyor');
+    }
+
+    final candidates = [
+      Uri.parse('$_externalApiUrl/qr/pay'),
+      Uri.parse('$_externalApiUrl/payments/qr'),
+    ];
+
+    final body = <String, dynamic>{
+      'receiver_iban': receiverIban,
+      'receiver_name': receiverName,
+      'amount': amount,
+      if (note != null && note.isNotEmpty) 'note': note,
+      if (_currentSessionId != null) 'session_id': _currentSessionId,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    Object? lastErr;
+    for (final url in candidates) {
+      try {
+        final resp = await http
+            .post(
+              url,
+              headers: const {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode(body),
+            )
+            .timeout(_timeout);
+
+        if (resp.statusCode == 200 || resp.statusCode == 201) {
+          final data = jsonDecode(resp.body);
+
+          final success = (data['success'] == true) ||
+              (data['status']?.toString().toLowerCase() == 'ok') ||
+              (data['status']?.toString().toLowerCase() == 'success');
+
+          if (!success) {
+            throw ApiServiceException(
+              data['error']?.toString() ??
+                  data['message']?.toString() ??
+                  'Ödeme başarısız (sunucu).',
+            );
+          }
+
+          return QRPayResponse.fromJson(
+            data,
+            fallbackAmount: amount,
+            fallbackReceiverName: receiverName,
+          );
+        } else {
+          lastErr = 'HTTP ${resp.statusCode}';
+        }
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    throw ApiServiceException('QR ödeme endpointine ulaşılamadı: $lastErr');
+  }
+
+  // Helpers
   static String _generateSessionId() =>
       'session_${DateTime.now().millisecondsSinceEpoch}';
   static String _generateMessageId() =>
@@ -380,19 +403,16 @@ class ApiServiceManager {
   static BotBadgeState _determineBadgeFromContent(String content) {
     final c = content.toLowerCase();
 
-    if (c.contains(RegExp(
-        r'(account|balance|money|transfer|payment|bank|hesap|para|bakiye)'))) {
+    if (c.contains(RegExp(r'(account|balance|money|transfer|payment|bank|hesap|para|bakiye)'))) {
       return BotBadgeState.sekreter;
     }
-    if (c.contains(
-        RegExp(r'(connection|error|problem|unavailable|hata|sorun)'))) {
+    if (c.contains(RegExp(r'(connection|error|problem|unavailable|hata|sorun)'))) {
       return BotBadgeState.noConnection;
     }
     if (c.contains(RegExp(r'(success|completed|done|başarılı|tamamlandı)'))) {
       return BotBadgeState.connection;
     }
-    if (c.contains(
-        RegExp(r'(thinking|processing|analyzing|düşünüyor|işleniyor)'))) {
+    if (c.contains(RegExp(r'(thinking|processing|analyzing|düşünüyor|işleniyor)'))) {
       return BotBadgeState.thinking;
     }
     return BotBadgeState.sekreter;
@@ -435,8 +455,7 @@ class UniversalChatResponse {
         json['message'] ?? json['response'] ?? '',
       ),
       timestamp: json['timestamp'] ?? DateTime.now().toIso8601String(),
-      metadata:
-          (json['metadata'] is Map<String, dynamic>) ? json['metadata'] : null,
+      metadata: (json['metadata'] is Map<String, dynamic>) ? json['metadata'] : null,
     );
   }
 
@@ -489,4 +508,45 @@ class ApiException implements Exception {
   @override
   String toString() =>
       'ApiException: $message ${statusCode != null ? '(${statusCode})' : ''}';
+}
+
+/// ====== QR ödeme modeli ve exception ======
+class QRPayResponse {
+  final String reference;
+  final double amount;
+  final String receiverName;
+
+  QRPayResponse({
+    required this.reference,
+    required this.amount,
+    required this.receiverName,
+  });
+
+  factory QRPayResponse.fromJson(
+    Map<String, dynamic> json, {
+    required double fallbackAmount,
+    required String fallbackReceiverName,
+  }) {
+    final ref = (json['reference'] ?? json['ref'] ?? '').toString();
+    final amt = (json['amount'] is num)
+        ? (json['amount'] as num).toDouble()
+        : double.tryParse(json['amount']?.toString() ?? '') ?? fallbackAmount;
+    final rcvName = (json['receiver_name'] ??
+            json['receiverName'] ??
+            fallbackReceiverName)
+        .toString();
+
+    return QRPayResponse(
+      reference: ref.isEmpty ? 'REF-${DateTime.now().millisecondsSinceEpoch}' : ref,
+      amount: amt,
+      receiverName: rcvName,
+    );
+  }
+}
+
+class ApiServiceException implements Exception {
+  final String message;
+  ApiServiceException(this.message);
+  @override
+  String toString() => 'ApiServiceException: $message';
 }

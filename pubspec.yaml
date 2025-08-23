@@ -38,6 +38,8 @@ dependencies:
   connectivity_plus: ^6.0.1
   http: ^1.1.0  # YENİ EKLENEN PAKET
   shared_preferences: ^2.5.3
+  mobile_scanner: ^7.0.1
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:
