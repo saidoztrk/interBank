@@ -56,7 +56,7 @@ class BasvurularPage extends StatelessWidget {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        "Size özel tekliflere hemen göz atın.",
+                        "Size         rklrmr              özel tekliflere hemen göz atın.",
                         style: TextStyle(fontSize: 12, color: Colors.black54),
                       ),
                     ],
