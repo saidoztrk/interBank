@@ -1,6 +1,21 @@
+// lib/screens/login_screen.dart
+// -----------------------------------------------------------
+// Erenay tarafından güncellendi:
+// - Team1 listesi kaldırıldı; üstte SON BAŞARILI GİRİŞ'in adı/soyadı gösterilir.
+// - "Bireysel" formu gerçek Azure DB API login çağrısı yapar.
+// - GİRİŞ sonrası last_username / last_full_name kayıt edilir.
+// - PIN akışı: Son kullanıcı için 6 haneli PIN ile tekrar login yapılır.
+// - Klavye için autofocus + textInputAction ayarlandı.
+// - Bol konsol logu eklendi (tag: [Erenay]).
+// -----------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
 import '../services/session_manager.dart';
+import '../services/api_db_manager.dart';
+import '../providers/db_provider.dart'; // api örneğine ulaşmak için
 
 class BankStyleLoginScreen extends StatefulWidget {
   const BankStyleLoginScreen({super.key});
@@ -13,14 +28,27 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
   final PageController _pageController = PageController();
   int _pageIndex = 0;
 
-  // Kullanıcı geçişi
-  final List<String> _users = ["Team 1", "Team 2", "Team 3"];
-  int _selectedUser = 0;
+  String? _lastUsername;
+  String? _lastFullName;
 
-  String get currentUserName => _users[_selectedUser];
-  final String _segment = "Bireysel";
+  @override
+  void initState() {
+    super.initState();
+    _loadLastUser();
+  }
 
-  void _onLoginPressed() => _showPinSheet();
+  Future<void> _loadLastUser() async {
+    final u = await SessionManager.getLastUsername();
+    final n = await SessionManager.getLastFullName();
+    // ignore: avoid_print
+    print('[Erenay][LOGIN] last user: u=$u, name=$n');
+    if (mounted) {
+      setState(() {
+        _lastUsername = u;
+        _lastFullName = n;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -28,186 +56,64 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Arka plan görseli üstüne yumuşak mavi bir overlay (okunabilirlik için)
-    const overlayGradient = LinearGradient(
-      colors: [
-        Color(0xAA0C5DB1), // üst: yoğun mavi, yarı saydam
-        Color(0x660870C9), // alt: daha şeffaf mavi
-      ],
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-    );
-
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1) Deniz arka planı
-            Image.asset(
-              'lib/assets/images/captain/login/Sea-Background.jpeg',
-              fit: BoxFit.cover,
-            ),
-
-            // 2) Okunabilirlik için yarı saydam mavi gradyan overlay
-            const DecoratedBox(
-              decoration: BoxDecoration(gradient: overlayGradient),
-            ),
-
-            // 3) İçerik
-            SafeArea(
-              child: Column(
-                children: [
-                  const SizedBox(height: 6),
-                  const Text(
-                    "CaptainCep",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Üst kısayollar
-                  SizedBox(
-                    height: 76,
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      scrollDirection: Axis.horizontal,
-                      children: const [
-                        _TopShortcut(
-                            icon: Icons.verified_user, label: "Güvenlik"),
-                        _TopShortcut(
-                            icon: Icons.account_balance_wallet,
-                            label: "Yatırım"),
-                        _TopShortcut(
-                            icon: Icons.local_offer, label: "Pazarama"),
-                        _TopShortcut(
-                            icon: Icons.business_center, label: "Genç KOBİ"),
-                        _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: PageView(
-                            controller: _pageController,
-                            onPageChanged: (i) =>
-                                setState(() => _pageIndex = i),
-                            children: [
-                              // 0: Var olan kullanıcı (PIN ile)
-                              _ExistingUserCard(
-                                name: currentUserName,
-                                segment: _segment,
-                                onLogin: _onLoginPressed,
-                                users: _users,
-                                selectedUserIndex: _selectedUser,
-                                onPickUser: (i) =>
-                                    setState(() => _selectedUser = i),
-                              ),
-
-                              // 1: Yeni kullanıcı
-                              _NewUserCard(
-                                onBireysel: _showNewUserLoginSheet,
-                                onTicari: _showCommercialLoginSheet,
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Page indicator
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(
-                            2,
-                            (i) => AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
-                              margin: const EdgeInsets.symmetric(
-                                  horizontal: 3, vertical: 8),
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: i == _pageIndex
-                                    ? Colors.white
-                                    : Colors.white.withOpacity(0.5),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        _BottomCardsAndShortcuts(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- PIN Bottom Sheet ---
+  // --- PIN Bottom Sheet (Son kullanıcı için) ---
   void _showPinSheet() {
+    if (_lastUsername == null || _lastUsername!.isEmpty) {
+      _errorSnack('Kayıtlı kullanıcı bulunamadı. Önce "Yeni Kullanıcı" ile giriş yapın.');
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) {
         String pin = "";
+
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            Future<void> tryLogin() async {
+              if (pin.length != 6) return;
+              // ignore: avoid_print
+              print('[Erenay][PIN] try login | lastUsername=$_lastUsername');
+
+              try {
+                final db = context.read<DbProvider>().api; // ApiDbManager
+                final result = await db.loginDb(
+                  username: _lastUsername!,
+                  password: pin,
+                );
+
+                // ignore: avoid_print
+                print('[Erenay][PIN] login success | cid=${result.customerId} name=${result.fullName}');
+
+                await SessionManager.saveLastUsername(_lastUsername!);
+                if (result.fullName.isNotEmpty) {
+                  await SessionManager.saveLastFullName(result.fullName);
+                }
+
+                if (!mounted) return;
+                Navigator.of(context).pop(); // sheet kapat
+                Navigator.pushReplacementNamed(context, '/home');
+              } catch (e) {
+                // ignore: avoid_print
+                print('[Erenay][PIN] login FAIL: $e');
+                HapticFeedback.mediumImpact();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Şifre hatalı. Tekrar deneyin."),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                setSheetState(() => pin = "");
+              }
+            }
+
             void addDigit(String d) {
               if (pin.length >= 6) return;
               setSheetState(() => pin += d);
               if (pin.length == 6) {
-                Future.delayed(const Duration(milliseconds: 150), () async {
-                  if (pin == "123456") {
-                    final uname = currentUserName
-                        .trim()
-                        .toLowerCase()
-                        .replaceAll(' ', '');
-                    await SessionManager.saveUsername(currentUserName);
-                    if (uname == 'team1' ||
-                        uname == 'takım1' ||
-                        uname == 'takim1') {
-                      await SessionManager.saveCustomerNo(
-                          17953063); // ✅ Team 1 → 17953063
-                    } else {
-                      await SessionManager.saveCustomerNo(
-                          null); // diğerleri temiz
-                    }
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                      Navigator.pushReplacementNamed(context, '/home');
-                    }
-                  } else {
-                    HapticFeedback.mediumImpact();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Şifre hatalı. Tekrar deneyin."),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    setSheetState(() => pin = "");
-                  }
-                });
+                Future.delayed(const Duration(milliseconds: 120), tryLogin);
               }
             }
 
@@ -240,9 +146,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    "Şifre • $currentUserName",
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600),
+                    "Şifre • ${_lastFullName ?? _lastUsername ?? ''}",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -255,9 +160,7 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                         height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: i < pin.length
-                              ? const Color(0xFF0C5DB1)
-                              : Colors.black12,
+                          color: i < pin.length ? const Color(0xFF0C5DB1) : Colors.black12,
                         ),
                       ),
                     ),
@@ -284,8 +187,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) {
-        final tc = TextEditingController();
-        final pw = TextEditingController();
+        final usernameCtrl = TextEditingController();
+        final pwCtrl = TextEditingController();
         final formKey = GlobalKey<FormState>();
 
         return Container(
@@ -314,40 +217,65 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  controller: tc,
-                  keyboardType: TextInputType.number,
+                  controller: usernameCtrl,
+                  autofocus: true, // klavye
+                  textInputAction: TextInputAction.next,
+                  keyboardType: TextInputType.text,
                   decoration: _filledDecoration(
-                    label: "Müşteri / T.C. No",
+                    label: "Müşteri No / T.C. / E-posta",
                     icon: Icons.badge_outlined,
                   ),
                   validator: _required,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: pw,
+                  controller: pwCtrl,
                   obscureText: true,
+                  maxLength: 6,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
                   decoration: _filledDecoration(
-                    label: "Şifre",
+                    label: "6 haneli şifre",
                     icon: Icons.lock_outline,
                   ),
                   validator: _required,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 _primaryAction(
                   label: "GİRİŞ",
                   onPressed: () async {
-                    if (formKey.currentState!.validate()) {
-                      if (tc.text.trim() == "100200300" &&
-                          pw.text.trim() == "123456") {
-                        await SessionManager.saveUsername('Bireysel');
-                        await SessionManager.saveCustomerNo(
-                            null); // Team1 değil → temizle
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                        Navigator.pushReplacementNamed(context, '/home');
-                      } else {
-                        _errorSnack("Bilgiler hatalı. Tekrar deneyin.");
+                    if (!formKey.currentState!.validate()) return;
+
+                    final username = usernameCtrl.text.trim();
+                    final password = pwCtrl.text.trim();
+                    // ignore: avoid_print
+                    print('[Erenay][BIREYSEL] try login | u=$username');
+
+                    try {
+                      final db = context.read<DbProvider>().api;
+                      final result = await db.loginDb(
+                        username: username,
+                        password: password,
+                      );
+
+                      // ignore: avoid_print
+                      print('[Erenay][BIREYSEL] login success | cid=${result.customerId} name=${result.fullName}');
+
+                      await SessionManager.saveLastUsername(username);
+                      if (result.fullName.isNotEmpty) {
+                        await SessionManager.saveLastFullName(result.fullName);
                       }
+
+                      if (!mounted) return;
+                      Navigator.pop(context); // sheet kapat
+                      Navigator.pushReplacementNamed(context, '/home');
+                    } catch (e) {
+                      // ignore: avoid_print
+                      print('[Erenay][BIREYSEL] login FAIL: $e');
+                      _errorSnack("Bilgiler hatalı. Tekrar deneyin.");
+                    } finally {
+                      // Üst başlıktaki adı güncelle
+                      _loadLastUser();
                     }
                   },
                 ),
@@ -364,107 +292,121 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     );
   }
 
-  // --- Yeni kullanıcı (Ticari) formu ---
+  // --- Yeni kullanıcı (Ticari) formu (şimdilik pasif tutuyoruz) ---
   void _showCommercialLoginSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        final vkn = TextEditingController();
-        final user = TextEditingController();
-        final pw = TextEditingController();
-        final formKey = GlobalKey<FormState>();
+    _errorSnack('Ticari giriş bu sürümde kapalı. Lütfen Bireysel ile deneyin.');
+  }
 
-        return Container(
-          padding: EdgeInsets.only(
-            left: 18,
-            right: 18,
-            top: 12,
-            bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sheetHandle(),
-                const SizedBox(height: 14),
-                const Text(
-                  "Ticari Giriş",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: vkn,
-                  keyboardType: TextInputType.number,
-                  decoration: _filledDecoration(
-                    label: "VKN / Firma No",
-                    icon: Icons.apartment_outlined,
-                  ),
-                  validator: _required,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: user,
-                  decoration: _filledDecoration(
-                    label: "Kullanıcı Kodu",
-                    icon: Icons.badge,
-                  ),
-                  validator: _required,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: pw,
-                  obscureText: true,
-                  decoration: _filledDecoration(
-                    label: "Şifre",
-                    icon: Icons.lock_outline,
-                  ),
-                  validator: _required,
-                ),
-                const SizedBox(height: 16),
-                _primaryAction(
-                  label: "GİRİŞ",
-                  onPressed: () async {
-                    if (formKey.currentState!.validate()) {
-                      if (vkn.text.trim() == "1112223334" &&
-                          user.text.trim() == "team" &&
-                          pw.text.trim() == "654321") {
-                        await SessionManager.saveUsername('Ticari');
-                        await SessionManager.saveCustomerNo(
-                            null); // Team1 değil → temizle
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                        Navigator.pushReplacementNamed(context, '/home');
-                      } else {
-                        _errorSnack("Bilgiler hatalı. Tekrar deneyin.");
-                      }
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text("ŞİFRE OLUŞTUR / UNUTTUM"),
-                ),
-              ],
+  // ----- UI -----
+
+  @override
+  Widget build(BuildContext context) {
+    const overlayGradient = LinearGradient(
+      colors: [Color(0xAA0C5DB1), Color(0x660870C9)],
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+    );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              'lib/assets/images/captain/login/Sea-Background.jpeg',
+              fit: BoxFit.cover,
             ),
-          ),
-        );
-      },
+            const DecoratedBox(decoration: BoxDecoration(gradient: overlayGradient)),
+            SafeArea(
+              child: Column(
+                children: [
+                  const SizedBox(height: 6),
+                  const Text(
+                    "CaptainCep",
+                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // üst kısayollar (değişmedi)
+                  SizedBox(
+                    height: 76,
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      scrollDirection: Axis.horizontal,
+                      children: const [
+                        _TopShortcut(icon: Icons.verified_user, label: "Güvenlik"),
+                        _TopShortcut(icon: Icons.account_balance_wallet, label: "Yatırım"),
+                        _TopShortcut(icon: Icons.local_offer, label: "Pazarama"),
+                        _TopShortcut(icon: Icons.business_center, label: "Genç KOBİ"),
+                        _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: PageView(
+                            controller: _pageController,
+                            onPageChanged: (i) => setState(() => _pageIndex = i),
+                            children: [
+                              // 0: Son kullanıcı (PIN ile)
+                              _ExistingUserCard(
+                                fullName: _lastFullName ?? _lastUsername ?? 'Kayıtlı Kullanıcı Yok',
+                                onLogin: _showPinSheet,
+                                hasUser: _lastUsername != null,
+                              ),
+
+                              // 1: Yeni kullanıcı
+                              _NewUserCard(
+                                onBireysel: _showNewUserLoginSheet,
+                                onTicari: _showCommercialLoginSheet,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            2,
+                            (i) => AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: i == _pageIndex ? Colors.white : Colors.white.withOpacity(0.5),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const _BottomCardsAndShortcuts(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   // ----- Helpers -----
-  InputDecoration _filledDecoration(
-      {required String label, required IconData icon}) {
+
+  InputDecoration _filledDecoration({required String label, required IconData icon}) {
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon),
@@ -474,11 +416,9 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     );
   }
 
-  String? _required(String? v) =>
-      (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null;
+  String? _required(String? v) => (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null;
 
-  Widget _primaryAction(
-      {required String label, required VoidCallback onPressed}) {
+  Widget _primaryAction({required String label, required VoidCallback onPressed}) {
     return SizedBox(
       height: 52,
       child: ElevatedButton(
@@ -486,12 +426,10 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0C5DB1),
           foregroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: Text(label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -506,8 +444,7 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
         child: Container(
           width: 44,
           height: 5,
-          decoration: BoxDecoration(
-              color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+          decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
         ),
       );
 }
@@ -550,22 +487,13 @@ class _TopShortcut extends StatelessWidget {
 }
 
 class _ExistingUserCard extends StatelessWidget {
-  final String name;
-  final String segment;
+  final String fullName;
   final VoidCallback onLogin;
-
-  // kullanıcı seçimi
-  final List<String> users;
-  final int selectedUserIndex;
-  final ValueChanged<int> onPickUser;
-
+  final bool hasUser;
   const _ExistingUserCard({
-    required this.name,
-    required this.segment,
+    required this.fullName,
     required this.onLogin,
-    required this.users,
-    required this.selectedUserIndex,
-    required this.onPickUser,
+    required this.hasUser,
   });
 
   @override
@@ -578,61 +506,23 @@ class _ExistingUserCard extends StatelessWidget {
           backgroundColor: Colors.white,
           child: const CircleAvatar(
             radius: 43,
-            backgroundImage:
-                AssetImage('lib/assets/images/person/teamwork.png'),
+            backgroundImage: AssetImage('lib/assets/images/person/teamwork.png'),
           ),
         ),
         const SizedBox(height: 14),
 
-        // İsim + segment + kullanıcı geçiş menüsü
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: PopupMenuButton<int>(
-                iconSize: 18,
-                color: Colors.white,
-                elevation: 6,
-                offset: const Offset(0, 24),
-                onSelected: onPickUser,
-                itemBuilder: (context) => [
-                  for (int i = 0; i < users.length; i++)
-                    PopupMenuItem<int>(
-                      value: i,
-                      child: Row(
-                        children: [
-                          if (i == selectedUserIndex)
-                            const Icon(Icons.check, size: 18),
-                          if (i == selectedUserIndex) const SizedBox(width: 6),
-                          Text(users[i]),
-                        ],
-                      ),
-                    ),
-                ],
-                child: const Padding(
-                  padding: EdgeInsets.all(4.0),
-                  child: Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                ),
-              ),
-            ),
-          ],
+        // İsim
+        Text(
+          fullName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
-          segment,
+          "Bireysel",
           style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16),
         ),
         const SizedBox(height: 22),
@@ -643,16 +533,14 @@ class _ExistingUserCard extends StatelessWidget {
             width: double.infinity,
             height: 54,
             child: ElevatedButton(
-              onPressed: onLogin,
+              onPressed: hasUser ? onLogin : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7BC6FF),
+                backgroundColor: hasUser ? const Color(0xFF7BC6FF) : Colors.white24,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const Text("GİRİŞ",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              child: const Text("GİRİŞ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
           ),
         ),
@@ -692,11 +580,7 @@ class _NewUserCard extends StatelessWidget {
         const SizedBox(height: 14),
         const Text(
           "Yeni Kullanıcı",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
         Text(
@@ -708,12 +592,9 @@ class _NewUserCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Row(
             children: [
-              Expanded(
-                  child:
-                      _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
+              Expanded(child: _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
               const SizedBox(width: 12),
-              Expanded(
-                  child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
+              Expanded(child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
             ],
           ),
         ),
@@ -748,18 +629,18 @@ class _PrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF0C5DB1),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: Text(label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
       ),
     );
   }
 }
 
 class _BottomCardsAndShortcuts extends StatelessWidget {
+  const _BottomCardsAndShortcuts();
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -773,12 +654,9 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
         children: [
           Row(
             children: const [
-              Expanded(
-                  child:
-                      _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
+              Expanded(child: _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
               SizedBox(width: 12),
-              Expanded(
-                  child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
+              Expanded(child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
             ],
           ),
           const SizedBox(height: 16),
@@ -786,8 +664,7 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: const [
               _QuickTile(icon: Icons.flash_on, label: "FAST\nİşlemleri"),
-              _QuickTile(
-                  icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
+              _QuickTile(icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
               _QuickTile(icon: Icons.qr_code_2, label: "Karekod\nİşlemleri"),
               _QuickTile(icon: Icons.more_horiz, label: "Daha\nFazlası"),
             ],
@@ -797,8 +674,7 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
             margin: const EdgeInsets.only(top: 10, bottom: 4),
             width: 120,
             height: 5,
-            decoration: BoxDecoration(
-                color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+            decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
           ),
         ],
       ),
@@ -824,9 +700,7 @@ class _InfoCard extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFF0C5DB1)),
           const SizedBox(width: 10),
-          Text(title,
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -844,8 +718,7 @@ class _QuickTile extends StatelessWidget {
       children: [
         Icon(icon, color: const Color(0xFF0C5DB1), size: 28),
         const SizedBox(height: 6),
-        Text(label,
-            textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
@@ -864,51 +737,26 @@ class _NumberPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keys = [
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
-      '6',
-      '7',
-      '8',
-      '9',
-      'close',
-      '0',
-      'back',
-    ];
+    final keys = ['1','2','3','4','5','6','7','8','9','close','0','back'];
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: keys.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.4,
+        crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.4,
       ),
       padding: const EdgeInsets.only(bottom: 10),
       itemBuilder: (_, i) {
         final k = keys[i];
         if (k == 'close') {
-          return _PadButton(
-            child: const Text("KAPAT",
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            onTap: onClose,
-          );
+          return _PadButton(child: const Text("KAPAT", style: TextStyle(fontWeight: FontWeight.w600)), onTap: onClose);
         }
         if (k == 'back') {
-          return _PadButton(
-            child: const Icon(Icons.backspace_outlined),
-            onTap: onBackspace,
-          );
+          return _PadButton(child: const Icon(Icons.backspace_outlined), onTap: onBackspace);
         }
         return _PadButton(
-          child: Text(k,
-              style:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          child: Text(k, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           onTap: () => onDigit(k),
         );
       },
@@ -924,10 +772,7 @@ class _PadButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Ink(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FB),
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFFF5F7FB), borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
