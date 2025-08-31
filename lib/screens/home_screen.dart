@@ -2,12 +2,19 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'login_screen.dart'; // BankStyleLoginScreen burada
+
+import 'package:provider/provider.dart';
+import '../services/session_manager.dart';
+import '../providers/db_provider.dart';
+import '../models/customer.dart';
+import '../models/account.dart';
+
+import 'login_screen.dart';
 
 class AppColors {
   static const background = Color(0xFF0A1628);
-  static const primary    = Color(0xFF1E3A8A); // lacivert
-  static const primary2   = Color(0xFF3B82F6); // açık mavi
+  static const primary    = Color(0xFF1E3A8A);
+  static const primary2   = Color(0xFF3B82F6);
   static const accent     = Color(0xFFFFD700);
   static const textLight  = Color(0xFFE5E7EB);
   static const textSub    = Color(0xFFD1D5DB);
@@ -15,21 +22,18 @@ class AppColors {
   static const bar        = Colors.white;
 }
 
-// Alt bar PNG ikonları
 const String kIconHome    = 'lib/assets/images/captain/home/home.png';
 const String kIconApps    = 'lib/assets/images/captain/home/apps.png';
 const String kIconSend    = 'lib/assets/images/captain/home/send.png';
 const String kIconPay     = 'lib/assets/images/captain/home/pay.png';
 const String kIconCaptain = 'lib/assets/images/captain/captain.png';
 
-// Bottom nav yüksekliği (scroll alt boşluğu için de kullanılıyor)
 const double kNavHeight = 140.0;
 
-// ---- Hesap modeli (login/LLM sonrası doldurulacak) ----
 class AccountInfo {
   final String musteriNo;
   final String adSoyad;
-  final String bakiye; // formatlı string (örn. 23.540,75 ₺)
+  final String bakiye;
   const AccountInfo({required this.musteriNo, required this.adSoyad, required this.bakiye});
 }
 
@@ -44,13 +48,15 @@ class _HomeScreenState extends State<HomeScreen> {
   AccountInfo? _account;
   bool _hideBalance = false;
 
+  bool _loading = true;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    _loadAccountMock(); // TODO: login tamamlanınca kendi servisinle değiştir
+    _loadAccountData();
   }
 
-  // PNG'leri önceden cache'leyelim (ilk frame "takılmasın")
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -59,61 +65,131 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadAccountMock() async {
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-    setState(() {
-      _account = const AccountInfo(
-        musteriNo: "12345678",
-        adSoyad: "Erenay Çevik",
-        bakiye: "23.540,75 ₺",
-      );
-    });
+  String _formatTry(double v) {
+    final s = v.toStringAsFixed(2);
+    final parts = s.split('.');
+    String intPart = parts[0];
+    final decPart = parts[1];
+    final buf = StringBuffer();
+    for (int i = 0; i < intPart.length; i++) {
+      final rev = intPart.length - 1 - i;
+      buf.write(intPart[i]);
+      if (rev % 3 == 0 && i != intPart.length - 1) buf.write('.');
+    }
+    return '${buf.toString()},$decPart ₺';
+  }
+
+  double? _selectBalance(List<Account> list) {
+    try {
+      final pri = list.firstWhere((a) {
+        final cur = a.currency.toUpperCase();
+        final t = a.type.toLowerCase();
+        return cur == 'TRY' && (t.contains('vadesiz') || t == 'checking' || t == 'deposit');
+      });
+      return pri.balance;
+    } catch (_) {
+      final total = list
+          .where((a) => a.currency.toUpperCase() == 'TRY')
+          .fold<double>(0.0, (sum, a) => sum + a.balance);
+      return total == 0.0 ? null : total;
+    }
+  }
+
+  Future<void> _loadAccountData() async {
+    debugPrint('[Home][Init] loadAccountData start');
+    setState(() { _loading = true; _error = null; });
+
+    try {
+      final cNo = SessionManager.customerNo;
+      if (cNo == null) {
+        throw Exception('Oturumda customerNo yok. Login sonrası SessionManager.saveCustomerNo çağrılmalı.');
+      }
+
+      final dbp = context.read<DbProvider>();
+
+      // 🔧 ÖNEMLİ: Cache müşteri ID’si, oturumdaki ID ile aynı değilse mutlaka yeniden yükle
+      if (dbp.customer == null || dbp.customer!.customerId != cNo) {
+        debugPrint('[Home][API] loadCustomerById($cNo) (cache miss or different user)');
+        await dbp.loadCustomerById(cNo);
+      } else {
+        debugPrint('[Home][API] customer cached: ${dbp.customer!.fullName} (#${dbp.customer!.customerId})');
+      }
+      final Customer? cust = dbp.customer;
+
+      debugPrint('[Home][API] getAccountsByCustomer($cNo)');
+      final accounts = await dbp.api.getAccountsByCustomer(cNo.toString());
+      debugPrint('[Home][API] accounts fetched: ${accounts.length}');
+      final bal = _selectBalance(accounts);
+      final formattedBal = (bal != null) ? _formatTry(bal) : '— ₺';
+
+      // İsim: öncelik API’den gelen customer.fullName
+      String name = cust?.fullName ?? '';
+      if (name.isEmpty) {
+        name = SessionManager.username ?? '';
+      }
+      if (name.isEmpty) {
+        name = await SessionManager.getLastFullName() ?? '— —';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _account = AccountInfo(
+          musteriNo: cNo.toString(),
+          adSoyad: name,
+          bakiye: formattedBal,
+        );
+      });
+
+      debugPrint('[Home][Init] ok name=$name custNo=$cNo balance=$formattedBal');
+    } catch (e, st) {
+      debugPrint('[Home][Error] $e\n$st');
+      if (!mounted) return;
+      setState(() { _error = e.toString(); });
+    } finally {
+      if (!mounted) return;
+      setState(() { _loading = false; });
+    }
   }
 
   Future<void> _performLogout() async {
-    // TODO: token/refresh temizliği, local state reset, vs.
-    // Örn: await secureStorage.deleteAll();
+    // Örn: await SessionManager.clearAuthOnly();
   }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-
-    // İçerik üst boşluğu — senin talebinle:
     final double contentTop = math.max(100, size.height * 0.15);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-
-      // ------- GÖVDE -------
       body: Stack(
         children: [
           _buildWavyHeader(context),
-
-          // İçerikler
           Padding(
             padding: EdgeInsets.only(top: contentTop),
-            child: SingleChildScrollView(
-              padding: EdgeInsets.only(
-                bottom: kNavHeight + MediaQuery.of(context).padding.bottom + 24,
-              ),
-              child: Column(
-                children: [
-                  _buildAccountCard(_account), // büyütülmüş — bakiye altta + göz ikonu
-                  const SizedBox(height: 16),
-                  _buildGreetingCard(),
-                  const SizedBox(height: 16),
-                  _buildQuickActions(),
-                  const SizedBox(height: 10),
-                  _buildFunStrip(),
-                ],
-              ),
-            ),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : (_error != null)
+                    ? _errorView(_error!)
+                    : SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          bottom: kNavHeight + MediaQuery.of(context).padding.bottom + 24,
+                        ),
+                        child: Column(
+                          children: [
+                            _buildAccountCard(_account),
+                            const SizedBox(height: 16),
+                            _buildGreetingCard(),
+                            const SizedBox(height: 16),
+                            _buildQuickActions(),
+                            const SizedBox(height: 10),
+                            _buildFunStrip(),
+                          ],
+                        ),
+                      ),
           ),
         ],
       ),
-
-      // ------- CUSTOM NAVBAR (yüksek, ripple YOK, PNG bozulmaz) -------
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
           splashColor: Colors.transparent,
@@ -126,7 +202,6 @@ class _HomeScreenState extends State<HomeScreen> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // Beyaz arka panel
               Positioned.fill(
                 top: 48,
                 child: Container(
@@ -140,26 +215,23 @@ class _HomeScreenState extends State<HomeScreen> {
                       BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, -2)),
                     ],
                   ),
-                  // Dört butonu hafif sola kaydır
                   padding: const EdgeInsets.fromLTRB(12, 0, 28, 0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _navIcon(kIconHome, 'Ana Sayfa', _tab == 0, () => setState(() => _tab = 0)),
                       _navIcon(kIconApps, 'Başvurular', _tab == 1, () => setState(() => _tab = 1)),
-                      const SizedBox(width: 88), // merkez buton boşluğu
+                      const SizedBox(width: 88),
                       _navIcon(kIconSend, 'Para Gönder', _tab == 2, () => setState(() => _tab = 2)),
                       _navIcon(kIconPay, 'Ödeme Yap', _tab == 3, () => setState(() => _tab = 3)),
                     ],
                   ),
                 ),
               ),
-
-              // 🔵 Ortadaki kaptan çemberi + “Kaptan”
               Positioned(
                 top: -6,
                 child: Transform.translate(
-                  offset: const Offset(-12, 0), // az sola
+                  offset: const Offset(-12, 0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -202,7 +274,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ------- ÜST DALGA -------
+  Widget _errorView(String msg) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+              const SizedBox(height: 12),
+              const Text('Bir şeyler ters gitti',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text(msg, style: const TextStyle(color: Colors.white70), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadAccountData, child: const Text('Tekrar Dene')),
+            ],
+          ),
+        ),
+      );
+
   Widget _buildWavyHeader(BuildContext context) {
     return ClipPath(
       clipper: _BottomWaveClipper(),
@@ -231,11 +321,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Icon(Icons.sailing, color: AppColors.accent, size: 20),
                       SizedBox(width: 8),
-                      Text("CaptainBank",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: .2)),
+                      Text(
+                        "CaptainBank",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: .2),
+                      ),
                     ],
                   ),
-                  _buildLogoutButton(context), // 🔴 Zil yerine Çıkış butonu
+                  _buildLogoutButton(context),
                 ],
               ),
             ),
@@ -245,16 +337,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 🔴 Sağ üst KIRMIZI ÇIKIŞ butonu — doğrudan BankStyleLoginScreen'e gider, stack'i temizler
   Widget _buildLogoutButton(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior.opaque, // ripple YOK
+      behavior: HitTestBehavior.opaque,
       onTap: () async {
         HapticFeedback.selectionClick();
         await _performLogout();
+        if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute<void>(
-            builder: (_) => const BankStyleLoginScreen(), // ✅ doğru sınıf adı
+            builder: (_) => const BankStyleLoginScreen(),
             settings: const RouteSettings(name: 'login'),
           ),
           (route) => false,
@@ -263,32 +355,22 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFE11D48), // kırmızı
+          color: const Color(0xFFE11D48),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: const [
-            BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4)),
-          ],
+          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))],
         ),
-        child: Row(
-          children: const [
+        child: const Row(
+          children: [
             Icon(Icons.logout, color: Colors.white, size: 16),
             SizedBox(width: 6),
-            Text(
-              "Çıkış",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                letterSpacing: .2,
-              ),
-            ),
+            Text("Çıkış",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: .2)),
           ],
         ),
       ),
     );
   }
 
-  // ------- HESAP KARTI (büyütülmüş, bakiye altta, gizle-göster) -------
   Widget _buildAccountCard(AccountInfo? acc) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -303,7 +385,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Üst satır: avatar + isim + müşteri no + göz
             Row(
               children: [
                 Container(
@@ -338,8 +419,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-
-            // Alt: Bakiye bandı (tam genişlik)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -370,7 +449,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _navyBubble(double size, Color color) =>
       Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
 
-  // ------- KARTLAR / STRIP -------
   Widget _buildGreetingCard() {
     final hour = DateTime.now().hour;
     final greet = hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
@@ -381,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.accent.withOpacity(0.20), width: 1), // bir tık sönük
+          border: Border.all(color: AppColors.accent.withOpacity(0.20), width: 1),
           boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
         ),
         child: Row(
@@ -406,7 +484,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: AppColors.accent.withOpacity(.25), borderRadius: BorderRadius.circular(999)),
+              decoration:
+                  BoxDecoration(color: AppColors.accent.withOpacity(.25), borderRadius: BorderRadius.circular(999)),
               child: Text(greet, style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w600)),
             ),
           ],
@@ -483,7 +562,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
-  // ---- navbar ikon helper (ripple yok, tint yok, haptic var) ----
   Widget _navIcon(String asset, String label, bool selected, VoidCallback onTap) {
     final BoxDecoration bg = selected
         ? const BoxDecoration(
@@ -504,10 +582,8 @@ class _HomeScreenState extends State<HomeScreen> {
             boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 14, offset: Offset(0, 6))],
           );
 
-    // PNG'lere tint yok
-    final Widget iconImg = Image.asset(
-      asset, width: 24, height: 24, fit: BoxFit.contain, filterQuality: FilterQuality.high,
-    );
+    final Widget iconImg =
+        Image.asset(asset, width: 24, height: 24, fit: BoxFit.contain, filterQuality: FilterQuality.high);
 
     final Color labelColor = selected ? AppColors.primary : Colors.grey;
 
@@ -525,16 +601,15 @@ class _HomeScreenState extends State<HomeScreen> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
-              width: 48, height: 48,
+              width: 48,
+              height: 48,
               decoration: bg,
               child: Center(child: iconImg),
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: labelColor),
-            ),
+            Text(label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: labelColor)),
           ],
         ),
       ),
@@ -542,7 +617,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ---- Üst dalga clipper ----
 class _BottomWaveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
@@ -551,7 +625,6 @@ class _BottomWaveClipper extends CustomClipper<Path> {
     final p1 = Offset(size.width * 0.5, size.height - 30);
     final c2 = Offset(size.width * 0.75, size.height - 90);
     final p2 = Offset(size.width, size.height - 50);
-
     path
       ..quadraticBezierTo(c1.dx, c1.dy, p1.dx, p1.dy)
       ..quadraticBezierTo(c2.dx, c2.dy, p2.dx, p2.dy)

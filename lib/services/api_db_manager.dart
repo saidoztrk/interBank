@@ -1,20 +1,27 @@
 // lib/services/api_db_manager.dart
-// Erenay tarafından eklendi: Azure DB API istemcisi (login + müşteri)
+// Erenay tarafından eklendi: Azure DB API istemcisi (login + müşteri + hesaplar)
 // Log tag: [Erenay][DB]
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
 import '../models/customer.dart';
+import '../models/account.dart';
 import 'session_manager.dart';
 
 class ApiDbManager {
-  ApiDbManager(this.baseUrl);
+  ApiDbManager(this.baseUrl, {http.Client? client})
+      : _client = client ?? http.Client();
+
   final String baseUrl; // örn: https://interntech-db-api.azurewebsites.net
+  final http.Client _client;
 
   Map<String, String> _jsonHeaders() => {
         'Content-Type': 'application/json',
         // ileride bearer token olursa buraya Authorization ekleriz
       };
+
+  Uri _u(String path) => Uri.parse('$baseUrl$path');
 
   /// Login (backend token istemiyor; CustomerId & FullName dönüyor)
   /// username: "9001" | "11111111111" | "seda.sayan@example.com"
@@ -23,12 +30,11 @@ class ApiDbManager {
     required String username,
     required String password,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/auth/login');
-    // Log
+    final uri = _u('/api/auth/login');
     // ignore: avoid_print
     print('[Erenay][DB] POST $uri | username=$username, pin=******');
 
-    final res = await http
+    final res = await _client
         .post(
           uri,
           headers: _jsonHeaders(),
@@ -36,7 +42,6 @@ class ApiDbManager {
         )
         .timeout(const Duration(seconds: 15));
 
-    // Log
     // ignore: avoid_print
     print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
 
@@ -49,15 +54,15 @@ class ApiDbManager {
           : (body as Map<String, dynamic>);
 
       final int customerId = _asInt(obj['CustomerId'] ?? obj['customerId']);
-      final String fullName = (obj['FullName'] ?? obj['fullName'] ?? '').toString();
+      final String fullName =
+          (obj['FullName'] ?? obj['fullName'] ?? '').toString();
 
       // --- Session kayıtları ---
-      // Uygulama genelinde görünen isim olsun:
-      await SessionManager.saveUsername(fullName.isNotEmpty ? fullName : username);
-      // Home/DB çağrıları için numeric ID:
+      await SessionManager.saveUsername(
+          fullName.isNotEmpty ? fullName : username);
       await SessionManager.saveCustomerNo(customerId);
 
-      // PIN akışı için "son kullanıcı" bilgilerini ayrı saklayalım
+      // PIN akışı için "son kullanıcı" bilgileri
       await SessionManager.saveLastUsername(username);
       if (fullName.isNotEmpty) {
         await SessionManager.saveLastFullName(fullName);
@@ -71,11 +76,12 @@ class ApiDbManager {
 
   /// Müşteri detayı
   Future<Customer> getCustomer(String customerNoOrId) async {
-    final uri = Uri.parse('$baseUrl/api/customers/$customerNoOrId');
+    final uri = _u('/api/customers/$customerNoOrId');
     // ignore: avoid_print
     print('[Erenay][DB] GET $uri');
 
-    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    final res =
+        await _client.get(uri, headers: _jsonHeaders()).timeout(const Duration(seconds: 15));
 
     // ignore: avoid_print
     print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
@@ -85,6 +91,45 @@ class ApiDbManager {
       return Customer.fromJson(j);
     }
     throw Exception('Customer alınamadı: ${res.statusCode} ${res.body}');
+  }
+
+  /// Hesap listesi: GET /api/accounts/by-customer/{customer_id}
+  /// Home ekranındaki bakiye için burayı kullanıyoruz.
+  Future<List<Account>> getAccountsByCustomer(String customerId) async {
+    final uri = _u('/api/accounts/by-customer/$customerId');
+    // ignore: avoid_print
+    print('[Erenay][DB] GET $uri');
+
+    final res =
+        await _client.get(uri, headers: _jsonHeaders()).timeout(const Duration(seconds: 15));
+
+    // ignore: avoid_print
+    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+
+      if (data is! List) {
+        throw Exception('Accounts response is not a list: $data');
+      }
+
+      // Büyük/Küçük harf toleransı ile map et
+      final accounts = data.map<Account>((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return Account.fromJson({
+          'accountId': m['AccountId'] ?? m['accountId'] ?? m['Id'] ?? m['id'],
+          'type': m['Type'] ?? m['type'] ?? '',
+          'currency': m['Currency'] ?? m['currency'] ?? 'TRY',
+          'balance': m['Balance'] ?? m['balance'] ?? 0,
+        });
+      }).toList();
+
+      // ignore: avoid_print
+      print('[Erenay][DB] [Accounts] n=${accounts.length}');
+      return accounts;
+    }
+
+    throw Exception('Accounts alınamadı: ${res.statusCode} ${res.body}');
   }
 }
 
