@@ -1,4 +1,4 @@
-// lib/screens/chat_screen.dart — MAYDAY brand, QR akışları kaldırıldı, placeholder cevap filtresi
+// lib/screens/chat_screen.dart — MAYDAY brand, QR akışları kaldırıldı, placeholder cevap filtresi + BG image
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -31,6 +31,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const _brandName = 'MAYDAY';
   static const _pastelPrimary = Color(0xFF8AB4F8);
+  static const _bgPath =
+      'lib/assets/images/captain/chat/Chatbot-Background.jpeg';
 
   final List<ChatMessage> _messages = [
     ChatMessage.bot(
@@ -172,6 +174,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'lib/assets/images/captain/captain_connection.png',
       'lib/assets/images/captain/captain_noconnection.png',
       'lib/assets/images/captain/captain_sekreter.png',
+      _bgPath,
     ];
     for (final asset in assets) {
       try {
@@ -499,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   Text(
-                    _getServiceDisplayNameStatic(_activeService),
+                    _getServiceDisplayName(_activeService),
                     style: const TextStyle(
                       color: Colors.grey,
                       fontSize: 10,
@@ -580,91 +583,104 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ? NoConnectionScreen(onRetry: _checkInitialConnection)
             : GestureDetector(
                 onTap: () => FocusScope.of(context).unfocus(),
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      if (!_serviceHealth.anyServiceAvailable)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          color: Colors.red.shade100,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.error, color: Colors.red),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'MCP Agent aktif değil.',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _checkAllServicesHealth,
-                                child: const Text('Tekrar Dene'),
-                              ),
-                            ],
-                          ),
-                        )
-                      else if (!_serviceHealth.mcpAgentAvailable)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          color: Colors.orange.shade100,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning, color: Colors.orange),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'MCP Agent erişilemiyor. Lütfen daha sonra deneyin.',
-                                  style: TextStyle(color: Colors.orange),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _checkAllServicesHealth,
-                                child: const Text('Yenile'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _scrollCtrl,
-                          physics: const ClampingScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 8),
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: _messages.length + (_waitingReply ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            final typingItem =
-                                _waitingReply && index == _messages.length;
-                            if (typingItem) {
-                              return const Padding(
-                                padding: EdgeInsets.only(left: 18, bottom: 6),
-                                child: _TypingIndicator(),
-                              );
-                            }
-                            final msg = _messages[index];
-                            return ChatBubble(message: msg);
-                          },
-                        ),
+                child: Stack(
+                  children: [
+                    // === Arka plan görseli (sadece görüntü) ===
+                    Positioned.fill(
+                      child: Image.asset(
+                        _bgPath,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
                       ),
-                      MessageInput(
-                        enabled: !_waitingReply &&
-                            _serviceHealth.anyServiceAvailable &&
-                            _serviceHealth.mcpAgentAvailable,
-                        onSend: _sendUserMessage,
+                    ),
+                    // === İçerik ===
+                    SafeArea(
+                      child: Column(
+                        children: [
+                          if (!_serviceHealth.anyServiceAvailable)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              color: Colors.red.shade100,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.error, color: Colors.red),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'MCP Agent aktif değil.',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _checkAllServicesHealth,
+                                    child: const Text('Tekrar Dene'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (!_serviceHealth.mcpAgentAvailable)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              color: Colors.orange.shade100,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.warning,
+                                      color: Colors.orange),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'MCP Agent erişilemiyor. Lütfen daha sonra deneyin.',
+                                      style: TextStyle(color: Colors.orange),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _checkAllServicesHealth,
+                                    child: const Text('Yenile'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Expanded(
+                            child: ListView.builder(
+                              controller: _scrollCtrl,
+                              physics: const ClampingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 8),
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              itemCount:
+                                  _messages.length + (_waitingReply ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                final typingItem =
+                                    _waitingReply && index == _messages.length;
+                                if (typingItem) {
+                                  return const Padding(
+                                    padding:
+                                        EdgeInsets.only(left: 18, bottom: 6),
+                                    child: _TypingIndicator(),
+                                  );
+                                }
+                                final msg = _messages[index];
+                                return ChatBubble(message: msg);
+                              },
+                            ),
+                          ),
+                          MessageInput(
+                            enabled: !_waitingReply &&
+                                _serviceHealth.anyServiceAvailable &&
+                                _serviceHealth.mcpAgentAvailable,
+                            onSend: _sendUserMessage,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
       ),
     );
   }
-
-  static String _getServiceDisplayNameStatic(ServiceType service) =>
-      'MCP Agent';
 }
 
 // ---- Typing indicator ----
