@@ -1,13 +1,10 @@
-// lib/screens/chat_screen.dart — GÜNCEL İMPORTLAR
+// lib/screens/chat_screen.dart — MAYDAY brand, QR akışları kaldırıldı, placeholder cevap filtresi
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-// 👉 QR entegrasyonu (package import)
-import 'package:interbank/qr/qr_intents.dart' show isQrPayIntent, QRPaymentData;
-import 'package:interbank/qr/qr_scan_screen.dart';
-
-// Servis & modeller (package import)
+// Servis & modeller
 import 'package:interbank/models/session_info.dart';
 import 'package:interbank/models/message_model.dart';
 import 'package:interbank/models/bot_badge_state.dart';
@@ -19,7 +16,7 @@ import 'package:interbank/screens/no_connection_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? initialSessionId;
-  final ServiceType? preferredService;
+  final ServiceType? preferredService; // geriye uyumluluk için
 
   const ChatScreen({
     super.key,
@@ -32,9 +29,12 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
+  static const _brandName = 'MAYDAY';
+  static const _pastelPrimary = Color(0xFF8AB4F8);
+
   final List<ChatMessage> _messages = [
     ChatMessage.bot(
-      '🏦 Merhaba! Ben CaptainBank asistanınızım. Banking işlemlerinizde size nasıl yardımcı olabilirim?',
+      '🏦 Merhaba! Ben $_brandName asistanınızım. Banking işlemlerinizde size nasıl yardımcı olabilirim?',
       badge: BotBadgeState.sekreter,
     ),
   ];
@@ -44,14 +44,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _waitingReply = false;
   bool _hasConnection = true;
 
-  // Çoklu servis sağlık durumu
+  // Servis sağlık durumu (yalnız MCP)
   ServiceHealthStatus _serviceHealth = const ServiceHealthStatus(
     mcpAgentAvailable: false,
-    externalApiAvailable: false,
+    externalApiAvailable: false, // UI geriye uyumluluk alanı
   );
 
-  // Aktif servis
-  ServiceType _activeService = ServiceType.mcpAgent;
+  // Artık tek servis: MCP
+  final ServiceType _activeService = ServiceType.mcpAgent;
 
   late StreamSubscription<List<ConnectivityResult>> _subscription;
 
@@ -60,10 +60,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Bağlantı başarılı mesajını bir kez gösterme guard'ı
   bool _announcedMcpUp = false;
-  bool _announcedExternalUp = false;
-
-  // Pastel renk
-  static const _pastelPrimary = Color(0xFF8AB4F8);
 
   @override
   void initState() {
@@ -72,10 +68,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (widget.initialSessionId != null) {
       ApiServiceManager.setCurrentSessionId(widget.initialSessionId!);
-    }
-    if (widget.preferredService != null) {
-      ApiServiceManager.setServiceType(widget.preferredService!);
-      _activeService = widget.preferredService!;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,7 +89,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ---- Servis Sağlık Kontrolü ----
+  // ---- Servis Sağlık Kontrolü (yalnız MCP) ----
   Future<void> _checkAllServicesHealth() async {
     try {
       final healthStatus = await ApiServiceManager.checkAllServicesHealth();
@@ -111,56 +103,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _messages.add(
             ChatMessage.bot(
-              '❌ Hiçbir backend servisi çalışmıyor.\n\n'
+              '❌ MCP Agent şu an erişilemiyor.\n\n'
               'Kontrol listesi:\n'
-              '• MCP Agent: Python (port 8081)\n'
-              '• External API: Ekibin FastAPI servisi (port 8083)',
+              '• MCP Agent (cloud): mcp-agent-api.azurewebsites.net',
               badge: BotBadgeState.noConnection,
             ),
           );
         });
       } else {
-        // Guard'lı ilan
         if (_serviceHealth.mcpAgentAvailable && !_announcedMcpUp) {
           _announcedMcpUp = true;
           setState(() {
-            _messages.add(ChatMessage.bot('MCP Agent bağlantısı başarılı!',
-                badge: BotBadgeState.connection));
+            _messages.add(
+              ChatMessage.bot(
+                'MCP Agent bağlantısı başarılı!',
+                badge: BotBadgeState.connection,
+              ),
+            );
           });
-        }
-        if (_serviceHealth.externalApiAvailable && !_announcedExternalUp) {
-          _announcedExternalUp = true;
-          setState(() {
-            _messages.add(ChatMessage.bot('External API bağlantısı başarılı!',
-                badge: BotBadgeState.connection));
-          });
-        }
-
-        // Tercih edilen servis ayakta değilse fallback
-        final preferredUp = _activeService == ServiceType.mcpAgent
-            ? _serviceHealth.mcpAgentAvailable
-            : _serviceHealth.externalApiAvailable;
-
-        if (!preferredUp) {
-          if (_serviceHealth.mcpAgentAvailable) {
-            _activeService = ServiceType.mcpAgent;
-            ApiServiceManager.setServiceType(ServiceType.mcpAgent);
-            setState(() {
-              _messages.add(
-                ChatMessage.bot('🔄 MCP Agent\'e geçiş yapıldı.',
-                    badge: BotBadgeState.connection),
-              );
-            });
-          } else if (_serviceHealth.externalApiAvailable) {
-            _activeService = ServiceType.externalApi;
-            ApiServiceManager.setServiceType(ServiceType.externalApi);
-            setState(() {
-              _messages.add(
-                ChatMessage.bot('🔄 External API\'ye geçiş yapıldı.',
-                    badge: BotBadgeState.connection),
-              );
-            });
-          }
         }
       }
 
@@ -168,20 +128,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('❌ Service health check error: $e');
     }
-  }
-
-  // ---- Servis Değiştirme ----
-  void _switchService(ServiceType newService) {
-    setState(() {
-      _activeService = newService;
-      ApiServiceManager.setServiceType(newService);
-      final name = _getServiceDisplayName(newService);
-      _messages.add(
-        ChatMessage.bot('🔄 $name\'ye geçiş yapıldı.',
-            badge: BotBadgeState.connection),
-      );
-    });
-    _scheduleScrollToBottom();
   }
 
   // ---- Bağlantı Yönetimi ----
@@ -194,13 +140,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (!isConnected) {
         _messages.add(
-          ChatMessage.bot('İnternet bağlantısı koptu. Çevrimdışısınız.',
-              badge: BotBadgeState.noConnection),
+          ChatMessage.bot(
+            'İnternet bağlantısı koptu. Çevrimdışısınız.',
+            badge: BotBadgeState.noConnection,
+          ),
         );
       } else {
         _messages.add(
-          ChatMessage.bot('İnternet bağlantısı geri geldi! 🌐',
-              badge: BotBadgeState.connection),
+          ChatMessage.bot(
+            'İnternet bağlantısı geri geldi! 🌐',
+            badge: BotBadgeState.connection,
+          ),
         );
         _checkAllServicesHealth();
       }
@@ -248,20 +198,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  // ---- Placeholder/ yönlendirme mesajlarını filtrele ----
+  bool _shouldSuppressBotText(String text) {
+    final t = text.trim().toLowerCase();
+    if (t.isEmpty) return true;
+    // örnek: "Account Info Agent'e yönlendiriyorum. Lütfen bekleyiniz."
+    final patterns = [
+      'yönlendiriyorum',
+      'bekleyiniz',
+      'bekleyin',
+      'redirect',
+      'forwarding',
+      'yönlendirilecek',
+      'agent\'e',
+      'agente',
+    ];
+    final hit = patterns.any((p) => t.contains(p));
+    // çok kısa ve yönlendirme benzeri ifadeler
+    if (hit && t.length < 120) return true;
+    return false;
+  }
+
   // ---- Mesaj Gönderimi ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-
-    // 👉 QR niyeti
-    if (isQrPayIntent(trimmed)) {
-      setState(() {
-        _messages.add(ChatMessage.user(trimmed));
-      });
-      _scheduleScrollToBottom();
-      await _startQrFlow();
-      return;
-    }
 
     // Bağlantı kontrol
     if (!_hasConnection) {
@@ -269,39 +230,44 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(
           ChatMessage.bot(
-              'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.',
-              badge: BotBadgeState.noConnection),
+            'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.',
+            badge: BotBadgeState.noConnection,
+          ),
         );
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // Servis uygunluğu
-    if (!_serviceHealth.anyServiceAvailable) {
+    // MCP uygun mu?
+    if (!_serviceHealth.anyServiceAvailable ||
+        !_serviceHealth.mcpAgentAvailable) {
       setState(() {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(
           ChatMessage.bot(
-              '🔧 Hiçbir backend servisi kullanılamıyor. Lütfen sunucuları başlatın.',
-              badge: BotBadgeState.noConnection),
+            '🔧 MCP Agent kullanılamıyor. Lütfen daha sonra yeniden deneyin.',
+            badge: BotBadgeState.noConnection,
+          ),
         );
       });
       _scheduleScrollToBottom();
       return;
     }
 
-    // Aktif servis ayakta mı?
-    final currentServiceUp = _activeService == ServiceType.mcpAgent
-        ? _serviceHealth.mcpAgentAvailable
-        : _serviceHealth.externalApiAvailable;
-
-    if (!currentServiceUp) {
-      if (_serviceHealth.mcpAgentAvailable) {
-        _switchService(ServiceType.mcpAgent);
-      } else if (_serviceHealth.externalApiAvailable) {
-        _switchService(ServiceType.externalApi);
-      }
+    // customerNo null kontrolü
+    final custNo = SessionManager.customerNo;
+    if (custNo == null) {
+      setState(() {
+        _messages.add(
+          ChatMessage.bot(
+            'Oturum bilgisi bulunamadı (customerNo boş). Lütfen yeniden giriş yapın.',
+            badge: BotBadgeState.noConnection,
+          ),
+        );
+      });
+      _scheduleScrollToBottom();
+      return;
     }
 
     // Kullanıcı mesajını ekle + typing indicator
@@ -314,107 +280,52 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     try {
       final response = await ApiServiceManager.sendMessage(
         message: trimmed,
-        customerNo: SessionManager.customerNo,
+        customerNo: custNo,
         sessionId: ApiServiceManager.getCurrentSessionId(),
-        serviceType: _activeService,
       );
 
       if (!mounted) return;
-      setState(() {
-        _messages
-            .add(ChatMessage.bot(response.message, badge: response.badgeState));
-        _waitingReply = false;
-      });
+
+      // Placeholder ise gösterme; değilse ekle
+      if (!_shouldSuppressBotText(response.message)) {
+        setState(() {
+          _messages.add(
+            ChatMessage.bot(response.message, badge: response.badgeState),
+          );
+        });
+      }
+      setState(() => _waitingReply = false);
       _scheduleScrollToBottom();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _messages.add(ChatMessage.bot('Hata: ${e.message}',
-            badge: BotBadgeState.noConnection));
+        _messages.add(
+          ChatMessage.bot('Hata: ${e.message}',
+              badge: BotBadgeState.noConnection),
+        );
         _waitingReply = false;
       });
       _scheduleScrollToBottom();
-      await _tryFallbackService(trimmed);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _messages.add(ChatMessage.bot(
+        _messages.add(
+          ChatMessage.bot(
             'Beklenmeyen bir hata oluştu. Lütfen tekrar dener misiniz?',
-            badge: BotBadgeState.noConnection));
+            badge: BotBadgeState.noConnection,
+          ),
+        );
         _waitingReply = false;
       });
       _scheduleScrollToBottom();
     }
   }
 
-  Future<void> _tryFallbackService(String message) async {
-    final fallback = _activeService == ServiceType.mcpAgent
-        ? ServiceType.externalApi
-        : ServiceType.mcpAgent;
-
-    final fallbackUp = fallback == ServiceType.mcpAgent
-        ? _serviceHealth.mcpAgentAvailable
-        : _serviceHealth.externalApiAvailable;
-
-    if (!fallbackUp) return;
-
-    try {
-      setState(() {
-        _messages.add(ChatMessage.bot(
-            '🔄 ${_getServiceDisplayName(fallback)}\'ye geçiş yapılıyor...',
-            badge: BotBadgeState.thinking));
-      });
-      _scheduleScrollToBottom();
-
-      final response = await ApiServiceManager.sendMessage(
-        message: message,
-        customerNo: SessionManager.customerNo,
-        sessionId: ApiServiceManager.getCurrentSessionId(),
-        serviceType: fallback,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        // geçiş mesajını kaldır
-        if (_messages.isNotEmpty &&
-            _messages.last.text.contains('geçiş yapılıyor')) {
-          _messages.removeLast();
-        }
-
-        _activeService = fallback;
-        ApiServiceManager.setServiceType(fallback);
-
-        _messages
-            .add(ChatMessage.bot(response.message, badge: response.badgeState));
-      });
-      _scheduleScrollToBottom();
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        if (_messages.isNotEmpty &&
-            _messages.last.text.contains('geçiş yapılıyor')) {
-          _messages.removeLast();
-        }
-      });
-    }
-  }
-
-  String _getServiceDisplayName(ServiceType service) {
-    switch (service) {
-      case ServiceType.mcpAgent:
-        return 'MCP Agent';
-      case ServiceType.externalApi:
-        return 'External API';
-    }
-  }
+  String _getServiceDisplayName(ServiceType service) => 'MCP Agent';
 
   Color _getServiceStatusColor() {
     if (!_serviceHealth.anyServiceAvailable) return Colors.red;
-
-    final up = _activeService == ServiceType.mcpAgent
-        ? _serviceHealth.mcpAgentAvailable
-        : _serviceHealth.externalApiAvailable;
-
+    final up = _serviceHealth.mcpAgentAvailable;
     return up ? Colors.green : Colors.orange;
   }
 
@@ -428,8 +339,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.clear();
         _messages.add(
           ChatMessage.bot(
-              '🆕 Yeni sohbet oturumu başlatıldı. Nasıl yardımcı olabilirim?',
-              badge: BotBadgeState.sekreter),
+            '🆕 Yeni sohbet oturumu başlatıldı. Nasıl yardımcı olabilirim?',
+            badge: BotBadgeState.sekreter,
+          ),
         );
       });
 
@@ -454,8 +366,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.clear();
         _messages.add(
           ChatMessage.bot(
-              '🧹 Sohbet geçmişi temizlendi. Yeni bir soruyla başlayalım!',
-              badge: BotBadgeState.sekreter),
+            '🧹 Sohbet geçmişi temizlendi. Yeni bir soruyla başlayalım!',
+            badge: BotBadgeState.sekreter,
+          ),
         );
       });
 
@@ -475,7 +388,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _showSessionHistory() async {
     try {
       final sessions = await ApiServiceManager.listSessions(
-          userId: SessionManager.customerNo ?? 0);
+        userId: SessionManager.customerNo ?? 0,
+      );
       if (!mounted) return;
 
       if (sessions.isEmpty) {
@@ -520,8 +434,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _messages.clear();
           _messages.add(
             ChatMessage.bot(
-                '📂 "${selected.title ?? selected.id}" oturumu yüklendi. Devam edebilirsiniz.',
-                badge: BotBadgeState.connection),
+              '📂 "${selected.title ?? selected.id}" oturumu yüklendi. Devam edebilirsiniz.',
+              badge: BotBadgeState.connection,
+            ),
           );
         });
       }
@@ -531,175 +446,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         SnackBar(content: Text('Oturumlar alınamadı: $e')),
       );
     }
-  }
-
-  // ====== QR FLOW (scan -> confirm -> pay) ======
-  Future<void> _startQrFlow() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => QRScanScreen()), // const kaldırıldı
-    );
-
-    if (!mounted) return;
-
-    if (result == null) {
-      setState(() {
-        _messages.add(ChatMessage.bot("QR okutma iptal edildi."));
-      });
-      _scheduleScrollToBottom();
-      return;
-    }
-
-    // Tür yükseltmeyi korumak için yeni değişken:
-    final r = result;
-    if (r is! QRPaymentData) {
-      setState(() {
-        _messages.add(ChatMessage.bot("Geçersiz QR verisi alındı."));
-      });
-      _scheduleScrollToBottom();
-      return;
-    }
-    final data = r; // QRPaymentData
-
-    // Tutarı kesinleştir (null-safe)
-    double amount = data.amount ?? 0;
-    if (amount <= 0) {
-      final entered = await _askAmount();
-      if (entered == null || entered <= 0) {
-        setState(() {
-          _messages.add(ChatMessage.bot("Tutar girilmedi, işlem iptal."));
-        });
-        _scheduleScrollToBottom();
-        return;
-      }
-      amount = entered;
-    }
-
-    final ok = await _askConfirm(
-      receiverName: data.receiverName,
-      iban: data.receiverIban,
-      amount: amount,
-      note: data.note,
-    );
-    if (ok != true) {
-      setState(() {
-        _messages.add(ChatMessage.bot("Ödeme iptal edildi."));
-      });
-      _scheduleScrollToBottom();
-      return;
-    }
-
-    await _payQr(
-      receiverIban: data.receiverIban,
-      receiverName: data.receiverName,
-      amount: amount,
-      note: data.note,
-    );
-  }
-
-  Future<bool?> _askConfirm({
-    required String receiverName,
-    required String iban,
-    required double amount,
-    String? note,
-  }) {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Ödeme Onayı"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Alıcı: $receiverName"),
-            Text("IBAN: $iban"),
-            Text("Tutar: ${amount.toStringAsFixed(2)} TL"),
-            if (note != null && note.isNotEmpty) Text("Açıklama: $note"),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text("İptal")),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text("Onayla")),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _payQr({
-    required String receiverIban,
-    required String receiverName,
-    required double amount,
-    String? note,
-  }) async {
-    setState(() {
-      _messages.add(ChatMessage.bot("Ödeme işleniyor…"));
-    });
-    _scheduleScrollToBottom();
-
-    try {
-      final resp = await ApiServiceManager.payQr(
-        receiverIban: receiverIban,
-        receiverName: receiverName,
-        amount: amount,
-        note: note,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _messages.add(
-          ChatMessage.bot(
-            "✅ Ödeme tamamlandı\n"
-            "Referans: ${resp.reference}\n"
-            "Tutar: ${resp.amount.toStringAsFixed(2)} TL\n"
-            "Alıcı: ${resp.receiverName}",
-          ),
-        );
-      });
-    } on ApiServiceException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(
-          ChatMessage.bot("❌ QR ödeme hatası: ${e.message}"),
-        );
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(
-          ChatMessage.bot("❌ Ödeme başarısız: $e"),
-        );
-      });
-    }
-    _scheduleScrollToBottom();
-  }
-
-  Future<double?> _askAmount() async {
-    final ctrl = TextEditingController();
-    return showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Tutar gir"),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(hintText: "Örn: 150.75"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
-          ElevatedButton(
-            onPressed: () {
-              final v = double.tryParse(ctrl.text.replaceAll(",", "."));
-              Navigator.pop(ctx, v);
-            },
-            child: const Text("Tamam"),
-          ),
-        ],
-      ),
-    );
   }
 
   // ---- Build ----
@@ -732,13 +478,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.smart_toy, color: Colors.grey, size: 20),
+              // Kaptan görünümlü küçük logo (asset)
+              const CircleAvatar(
+                radius: 10,
+                backgroundColor: Colors.transparent,
+                backgroundImage:
+                    AssetImage('lib/assets/images/captain/captain.png'),
+              ),
               const SizedBox(width: 8),
               Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const Text(
-                    'CaptainBank AI',
+                    _brandName,
                     style: TextStyle(
                       color: Colors.grey,
                       fontWeight: FontWeight.w600,
@@ -746,7 +499,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   Text(
-                    _getServiceDisplayName(_activeService),
+                    _getServiceDisplayNameStatic(_activeService),
                     style: const TextStyle(
                       color: Colors.grey,
                       fontSize: 10,
@@ -768,69 +521,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            PopupMenuButton<ServiceType>(
-              icon: const Icon(Icons.swap_horiz, color: Colors.grey),
-              tooltip: 'Servis Değiştir',
-              onSelected: _switchService,
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: ServiceType.mcpAgent,
-                  enabled: _serviceHealth.mcpAgentAvailable,
-                  child: Row(
-                    children: [
-                      Icon(Icons.memory,
-                          color: _serviceHealth.mcpAgentAvailable
-                              ? Colors.green
-                              : Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(
-                        'MCP Agent',
-                        style: TextStyle(
-                          color: _serviceHealth.mcpAgentAvailable
-                              ? Colors.black
-                              : Colors.grey,
-                        ),
-                      ),
-                      if (_activeService == ServiceType.mcpAgent)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.check, color: Colors.green, size: 16),
-                        ),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: ServiceType.externalApi,
-                  enabled: _serviceHealth.externalApiAvailable,
-                  child: Row(
-                    children: [
-                      Icon(Icons.cloud,
-                          color: _serviceHealth.externalApiAvailable
-                              ? Colors.blue
-                              : Colors.grey),
-                      const SizedBox(width: 8),
-                      Text(
-                        'External API',
-                        style: TextStyle(
-                          color: _serviceHealth.externalApiAvailable
-                              ? Colors.black
-                              : Colors.grey,
-                        ),
-                      ),
-                      if (_activeService == ServiceType.externalApi)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.check, color: Colors.green, size: 16),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.grey),
               onPressed: _checkAllServicesHealth,
-              tooltip: 'Servisleri kontrol et',
+              tooltip: 'Bağlantıyı kontrol et',
             ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.grey),
@@ -900,7 +594,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
-                                  'Hiçbir backend servisi aktif değil.',
+                                  'MCP Agent aktif değil.',
                                   style: TextStyle(color: Colors.red),
                                 ),
                               ),
@@ -911,56 +605,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ],
                           ),
                         )
-                      else ...[
-                        if (_activeService == ServiceType.mcpAgent &&
-                            !_serviceHealth.mcpAgentAvailable)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            color: Colors.orange.shade100,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.warning, color: Colors.orange),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'MCP Agent offline. External API\'ye geçebilirsiniz.',
-                                    style: TextStyle(color: Colors.orange),
-                                  ),
+                      else if (!_serviceHealth.mcpAgentAvailable)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          color: Colors.orange.shade100,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'MCP Agent erişilemiyor. Lütfen daha sonra deneyin.',
+                                  style: TextStyle(color: Colors.orange),
                                 ),
-                                TextButton(
-                                  onPressed: () =>
-                                      _switchService(ServiceType.externalApi),
-                                  child: const Text('Geç'),
-                                ),
-                              ],
-                            ),
+                              ),
+                              TextButton(
+                                onPressed: _checkAllServicesHealth,
+                                child: const Text('Yenile'),
+                              ),
+                            ],
                           ),
-                        if (_activeService == ServiceType.externalApi &&
-                            !_serviceHealth.externalApiAvailable)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            color: Colors.orange.shade100,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.warning, color: Colors.orange),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'External API offline. MCP Agent\'a geçebilirsiniz.',
-                                    style: TextStyle(color: Colors.orange),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      _switchService(ServiceType.mcpAgent),
-                                  child: const Text('Geç'),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
+                        ),
                       Expanded(
                         child: ListView.builder(
                           controller: _scrollCtrl,
@@ -985,7 +651,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                       MessageInput(
                         enabled: !_waitingReply &&
-                            _serviceHealth.anyServiceAvailable,
+                            _serviceHealth.anyServiceAvailable &&
+                            _serviceHealth.mcpAgentAvailable,
                         onSend: _sendUserMessage,
                       ),
                     ],
@@ -995,6 +662,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
     );
   }
+
+  static String _getServiceDisplayNameStatic(ServiceType service) =>
+      'MCP Agent';
 }
 
 // ---- Typing indicator ----
