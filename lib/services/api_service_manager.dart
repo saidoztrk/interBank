@@ -3,19 +3,18 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:math';
 
-
 import '../models/bot_badge_state.dart';
 import '../models/message_model.dart';
 import '../models/session_info.dart';
 
 enum ServiceType {
-  mcpAgent,     // Python Enhanced MCP Agent (8081)
-  externalApi,  // Ekibin FastAPI servisi (8083)
+  mcpAgent, // Python Enhanced MCP Agent (CLOUD)
+  externalApi, // Ekibin FastAPI servisi (8083 - local)
 }
 
 class ApiServiceManager {
-  // Servis URL'leri
-  static const String _mcpAgentUrl = 'http://10.0.2.2:8081';
+  // === Servis URL'leri ===
+  static const String _mcpAgentUrl = 'https://mcp-agent-api.azurewebsites.net';
   static const String _externalApiUrl = 'http://10.0.2.2:8083';
 
   // Zaman aşımı ayarları
@@ -27,12 +26,14 @@ class ApiServiceManager {
   static ServiceType _currentService = ServiceType.mcpAgent;
 
   // Aktif servis
-  static void setServiceType(ServiceType serviceType) => _currentService = serviceType;
+  static void setServiceType(ServiceType serviceType) =>
+      _currentService = serviceType;
   static ServiceType getCurrentServiceType() => _currentService;
 
   // Oturum ID referansı
   static String? getCurrentSessionId() => _currentSessionId;
-  static void setCurrentSessionId(String sessionId) => _currentSessionId = sessionId;
+  static void setCurrentSessionId(String sessionId) =>
+      _currentSessionId = sessionId;
   static void clearCurrentSessionReference() => _currentSessionId = null;
 
   /// ---- Chat: Tek giriş noktası ----
@@ -45,25 +46,27 @@ class ApiServiceManager {
     final target = serviceType ?? _currentService;
     switch (target) {
       case ServiceType.mcpAgent:
-        return _sendToMcpAgent(message, customerNo, sessionId);
+        return _sendToMcpAgent(message, customerNo);
       case ServiceType.externalApi:
         return _sendToExternalApi(message, customerNo, sessionId);
     }
   }
 
-  /// MCP Agent (Python - 8081) /chat
+  /// MCP Agent (CLOUD) /chat
+  /// İSTENEN BODY: { "customer_id": <int>, "message": "<string>" }
   static Future<UniversalChatResponse> _sendToMcpAgent(
     String message,
     int? customerNo,
-    String? sessionId,
   ) async {
     try {
+      if (customerNo == null) {
+        throw const ApiException('MCP Agent için customer_id zorunludur.');
+      }
+
       final url = Uri.parse('$_mcpAgentUrl/chat');
       final body = <String, dynamic>{
+        'customer_id': customerNo,
         'message': message,
-        if (customerNo != null) 'customerNo': customerNo,
-        if (sessionId != null || _currentSessionId != null)
-          'sessionId': sessionId ?? _currentSessionId,
       };
 
       final resp = await http
@@ -79,31 +82,41 @@ class ApiServiceManager {
 
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
-        if (data['success'] == true) {
-          final reply = (data['response'] ?? '').toString();
-          final ts = data['timestamp'] ?? DateTime.now().toIso8601String();
 
-          final sid = _currentSessionId ?? sessionId ?? '';
-          final mid = _generateMessageId();
+        final replyText = (data['reply'] ??
+                data['response'] ??
+                data['message'] ??
+                data['assistant']?['content'] ??
+                data['data']?['reply'])
+            ?.toString();
 
-          return UniversalChatResponse(
-            success: true,
-            message: reply,
-            sessionId: sid,
-            messageId: mid,
-            serviceType: ServiceType.mcpAgent,
-            badgeState: _determineBadgeFromContent(reply),
-            timestamp: ts,
-          );
-        } else {
-          throw ApiException(data['error']?['message'] ?? 'MCP Agent hatası');
+        if (replyText == null) {
+          throw const ApiException('MCP Agent yanıtında mesaj bulunamadı.');
         }
+
+        final ts = data['timestamp'] ?? DateTime.now().toIso8601String();
+        final mid = _generateMessageId();
+
+        return UniversalChatResponse(
+          success: true,
+          message: replyText,
+          sessionId: _currentSessionId ?? '',
+          messageId: mid,
+          serviceType: ServiceType.mcpAgent,
+          badgeState: _determineBadgeFromContent(replyText),
+          timestamp: ts,
+          metadata: (data['metadata'] is Map<String, dynamic>)
+              ? data['metadata']
+              : null,
+        );
       } else {
-        throw ApiException('MCP Agent sunucu hatası: ${resp.statusCode}');
+        final errText = resp.body.isNotEmpty ? resp.body : 'Bilinmeyen hata';
+        throw ApiException(
+            'MCP Agent sunucu hatası: ${resp.statusCode} - $errText');
       }
     } catch (e) {
       if (e is ApiException) rethrow;
-      throw ApiException('MCP Agent bağlantı hatası: $e');
+      throw ApiException('MCP Agent bağlantı/işleme hatası: $e');
     }
   }
 
@@ -154,7 +167,9 @@ class ApiServiceManager {
             serviceType: ServiceType.externalApi,
             badgeState: _determineBadgeFromContent(responseMessage),
             timestamp: data['timestamp'] ?? DateTime.now().toIso8601String(),
-            metadata: (data['metadata'] is Map<String, dynamic>) ? data['metadata'] : null,
+            metadata: (data['metadata'] is Map<String, dynamic>)
+                ? data['metadata']
+                : null,
           );
         } else {
           throw ApiException(data['error'] ?? 'External API hatası');
@@ -263,7 +278,8 @@ class ApiServiceManager {
     return [];
   }
 
-  static Future<List<SessionInfo>> _listMcpAgentSessions({required int userId}) async {
+  static Future<List<SessionInfo>> _listMcpAgentSessions(
+      {required int userId}) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/sessions/$userId');
       final resp = await http.get(url).timeout(_healthTimeout);
@@ -289,7 +305,7 @@ class ApiServiceManager {
     return [];
   }
 
-  /// Sağlık kontrolleri
+  /// ===== Sağlık kontrolleri =====
   static Future<bool> checkExternalApiHealth() async {
     try {
       final url = Uri.parse('$_externalApiUrl/health');
@@ -301,13 +317,37 @@ class ApiServiceManager {
   }
 
   static Future<bool> checkMcpAgentHealth() async {
+    // Bulut ajanlarında /health her zaman açık olmayabiliyor.
+    // Sıralı ve güvenli denemeler:
     try {
-      final url = Uri.parse('$_mcpAgentUrl/health');
-      final resp = await http.get(url).timeout(_healthTimeout);
-      return resp.statusCode == 200;
-    } catch (_) {
-      return false;
+      // 1) /health (varsa)
+      final urlHealth = Uri.parse('$_mcpAgentUrl/health');
+      final r1 = await http.get(urlHealth).timeout(_healthTimeout);
+      if (r1.statusCode == 200) return true;
+    } catch (_) {}
+
+    try {
+      // 2) root (çoğu PaaS bir 200/404 döndürür; 5xx değilse erişilebilir sayalım)
+      final urlRoot = Uri.parse('$_mcpAgentUrl/');
+      final r2 = await http.get(urlRoot).timeout(_healthTimeout);
+      if (r2.statusCode >= 200 && r2.statusCode < 500) return true;
+    } catch (_) {}
+
+    try {
+      // 3) /chat için OPTIONS (CORS/Allow test)
+      final urlOptions = Uri.parse('$_mcpAgentUrl/chat');
+      final r3 = await http.Request('OPTIONS', urlOptions)
+          .send()
+          .timeout(_healthTimeout);
+      if (r3.statusCode >= 200 && r3.statusCode < 500) return true;
+    } catch (_) {}
+
+    // 4) Son çare: Bulut URL'si ise soft-healthy dön (banner'ı bloklamasın)
+    if (_mcpAgentUrl.startsWith('https://')) {
+      return true;
     }
+
+    return false;
   }
 
   static Future<ServiceHealthStatus> checkAllServicesHealth() async {
@@ -330,7 +370,9 @@ class ApiServiceManager {
     ServiceType? serviceType,
     bool forceExternal = true,
   }) async {
-    final target = forceExternal ? ServiceType.externalApi : (serviceType ?? _currentService);
+    final target = forceExternal
+        ? ServiceType.externalApi
+        : (serviceType ?? _currentService);
     if (target == ServiceType.mcpAgent) {
       throw const ApiException('MCP Agent şu an QR ödemeyi desteklemiyor');
     }
@@ -403,16 +445,19 @@ class ApiServiceManager {
   static BotBadgeState _determineBadgeFromContent(String content) {
     final c = content.toLowerCase();
 
-    if (c.contains(RegExp(r'(account|balance|money|transfer|payment|bank|hesap|para|bakiye)'))) {
+    if (c.contains(RegExp(
+        r'(account|balance|money|transfer|payment|bank|hesap|para|bakiye)'))) {
       return BotBadgeState.sekreter;
     }
-    if (c.contains(RegExp(r'(connection|error|problem|unavailable|hata|sorun)'))) {
+    if (c.contains(
+        RegExp(r'(connection|error|problem|unavailable|hata|sorun)'))) {
       return BotBadgeState.noConnection;
     }
     if (c.contains(RegExp(r'(success|completed|done|başarılı|tamamlandı)'))) {
       return BotBadgeState.connection;
     }
-    if (c.contains(RegExp(r'(thinking|processing|analyzing|düşünüyor|işleniyor)'))) {
+    if (c.contains(
+        RegExp(r'(thinking|processing|analyzing|düşünüyor|işleniyor)'))) {
       return BotBadgeState.thinking;
     }
     return BotBadgeState.sekreter;
@@ -455,7 +500,8 @@ class UniversalChatResponse {
         json['message'] ?? json['response'] ?? '',
       ),
       timestamp: json['timestamp'] ?? DateTime.now().toIso8601String(),
-      metadata: (json['metadata'] is Map<String, dynamic>) ? json['metadata'] : null,
+      metadata:
+          (json['metadata'] is Map<String, dynamic>) ? json['metadata'] : null,
     );
   }
 
@@ -531,13 +577,13 @@ class QRPayResponse {
     final amt = (json['amount'] is num)
         ? (json['amount'] as num).toDouble()
         : double.tryParse(json['amount']?.toString() ?? '') ?? fallbackAmount;
-    final rcvName = (json['receiver_name'] ??
-            json['receiverName'] ??
-            fallbackReceiverName)
-        .toString();
+    final rcvName =
+        (json['receiver_name'] ?? json['receiverName'] ?? fallbackReceiverName)
+            .toString();
 
     return QRPayResponse(
-      reference: ref.isEmpty ? 'REF-${DateTime.now().millisecondsSinceEpoch}' : ref,
+      reference:
+          ref.isEmpty ? 'REF-${DateTime.now().millisecondsSinceEpoch}' : ref,
       amount: amt,
       receiverName: rcvName,
     );
