@@ -1,12 +1,12 @@
 // lib/screens/login_screen.dart
 // -----------------------------------------------------------
 // Erenay tarafından güncellendi:
-// - Team1 listesi kaldırıldı; üstte SON BAŞARILI GİRİŞ'in adı/soyadı gösterilir.
-// - "Bireysel" formu gerçek Azure DB API login çağrısı yapar.
-// - GİRİŞ sonrası last_username / last_full_name kayıt edilir.
-// - PIN akışı: Son kullanıcı için 6 haneli PIN ile tekrar login yapılır.
-// - Klavye için autofocus + textInputAction ayarlandı.
-// - Bol konsol logu eklendi (tag: [Erenay]).
+// - "Yeni Bireysel" sheet'i ayrı StatefulWidget'a taşındı (fokus/jump fix)
+// - Controller/FocusNode tek kez oluşturuluyor; klavye açılıp kapanınca
+//   T.C. alanına geri zıplama sorunu bitti.
+// - İlk alana autofocus sadece bir kez veriliyor (initState).
+// - Parola alanı TextInputAction.done + buildCounter gizli.
+// - Gerçek Azure DB API login akışı korunuyor, loglar eklendi.
 // -----------------------------------------------------------
 
 import 'package:flutter/material.dart';
@@ -14,7 +14,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/session_manager.dart';
-import '../services/api_db_manager.dart';
 import '../providers/db_provider.dart'; // api örneğine ulaşmak için
 
 class BankStyleLoginScreen extends StatefulWidget {
@@ -59,7 +58,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
   // --- PIN Bottom Sheet (Son kullanıcı için) ---
   void _showPinSheet() {
     if (_lastUsername == null || _lastUsername!.isEmpty) {
-      _errorSnack('Kayıtlı kullanıcı bulunamadı. Önce "Yeni Kullanıcı" ile giriş yapın.');
+      _errorSnack(
+          'Kayıtlı kullanıcı bulunamadı. Önce "Yeni Kullanıcı" ile giriş yapın.');
       return;
     }
 
@@ -85,7 +85,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                 );
 
                 // ignore: avoid_print
-                print('[Erenay][PIN] login success | cid=${result.customerId} name=${result.fullName}');
+                print(
+                    '[Erenay][PIN] login success | cid=${result.customerId} name=${result.fullName}');
 
                 await SessionManager.saveLastUsername(_lastUsername!);
                 if (result.fullName.isNotEmpty) {
@@ -147,7 +148,8 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                   const SizedBox(height: 14),
                   Text(
                     "Şifre • ${_lastFullName ?? _lastUsername ?? ''}",
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -160,7 +162,9 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                         height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: i < pin.length ? const Color(0xFF0C5DB1) : Colors.black12,
+                          color: i < pin.length
+                              ? const Color(0xFF0C5DB1)
+                              : Colors.black12,
                         ),
                       ),
                     ),
@@ -180,115 +184,19 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
     );
   }
 
-  // --- Yeni kullanıcı (Bireysel) formu ---
+  // --- Yeni kullanıcı (Bireysel) formu — ayrı widget’a taşındı ---
   void _showNewUserLoginSheet() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) {
-        final usernameCtrl = TextEditingController();
-        final pwCtrl = TextEditingController();
-        final formKey = GlobalKey<FormState>();
-
-        return Container(
-          padding: EdgeInsets.only(
-            left: 18,
-            right: 18,
-            top: 12,
-            bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sheetHandle(),
-                const SizedBox(height: 14),
-                const Text(
-                  "Bireysel Giriş",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: usernameCtrl,
-                  autofocus: true, // klavye
-                  textInputAction: TextInputAction.next,
-                  keyboardType: TextInputType.text,
-                  decoration: _filledDecoration(
-                    label: "Müşteri No / T.C. / E-posta",
-                    icon: Icons.badge_outlined,
-                  ),
-                  validator: _required,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: pwCtrl,
-                  obscureText: true,
-                  maxLength: 6,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  decoration: _filledDecoration(
-                    label: "6 haneli şifre",
-                    icon: Icons.lock_outline,
-                  ),
-                  validator: _required,
-                ),
-                const SizedBox(height: 6),
-                _primaryAction(
-                  label: "GİRİŞ",
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-
-                    final username = usernameCtrl.text.trim();
-                    final password = pwCtrl.text.trim();
-                    // ignore: avoid_print
-                    print('[Erenay][BIREYSEL] try login | u=$username');
-
-                    try {
-                      final db = context.read<DbProvider>().api;
-                      final result = await db.loginDb(
-                        username: username,
-                        password: password,
-                      );
-
-                      // ignore: avoid_print
-                      print('[Erenay][BIREYSEL] login success | cid=${result.customerId} name=${result.fullName}');
-
-                      await SessionManager.saveLastUsername(username);
-                      if (result.fullName.isNotEmpty) {
-                        await SessionManager.saveLastFullName(result.fullName);
-                      }
-
-                      if (!mounted) return;
-                      Navigator.pop(context); // sheet kapat
-                      Navigator.pushReplacementNamed(context, '/home');
-                    } catch (e) {
-                      // ignore: avoid_print
-                      print('[Erenay][BIREYSEL] login FAIL: $e');
-                      _errorSnack("Bilgiler hatalı. Tekrar deneyin.");
-                    } finally {
-                      // Üst başlıktaki adı güncelle
-                      _loadLastUser();
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text("ŞİFRE OLUŞTUR / UNUTTUM"),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (_) => _BireyselLoginSheet(
+        onSuccess: () async {
+          await _loadLastUser(); // başlıktaki ismi güncelle
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/home');
+        },
+      ),
     );
   }
 
@@ -322,14 +230,18 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
               'lib/assets/images/captain/login/Sea-Background.jpeg',
               fit: BoxFit.cover,
             ),
-            const DecoratedBox(decoration: BoxDecoration(gradient: overlayGradient)),
+            const DecoratedBox(
+                decoration: BoxDecoration(gradient: overlayGradient)),
             SafeArea(
               child: Column(
                 children: [
                   const SizedBox(height: 6),
                   const Text(
                     "CaptainCep",
-                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 10),
 
@@ -340,10 +252,15 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       scrollDirection: Axis.horizontal,
                       children: const [
-                        _TopShortcut(icon: Icons.verified_user, label: "Güvenlik"),
-                        _TopShortcut(icon: Icons.account_balance_wallet, label: "Yatırım"),
-                        _TopShortcut(icon: Icons.local_offer, label: "Pazarama"),
-                        _TopShortcut(icon: Icons.business_center, label: "Genç KOBİ"),
+                        _TopShortcut(
+                            icon: Icons.verified_user, label: "Güvenlik"),
+                        _TopShortcut(
+                            icon: Icons.account_balance_wallet,
+                            label: "Yatırım"),
+                        _TopShortcut(
+                            icon: Icons.local_offer, label: "Pazarama"),
+                        _TopShortcut(
+                            icon: Icons.business_center, label: "Genç KOBİ"),
                         _TopShortcut(icon: Icons.apps, label: "Daha Fazla"),
                       ],
                     ),
@@ -356,11 +273,14 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                         Expanded(
                           child: PageView(
                             controller: _pageController,
-                            onPageChanged: (i) => setState(() => _pageIndex = i),
+                            onPageChanged: (i) =>
+                                setState(() => _pageIndex = i),
                             children: [
                               // 0: Son kullanıcı (PIN ile)
                               _ExistingUserCard(
-                                fullName: _lastFullName ?? _lastUsername ?? 'Kayıtlı Kullanıcı Yok',
+                                fullName: _lastFullName ??
+                                    _lastUsername ??
+                                    'Kayıtlı Kullanıcı Yok',
                                 onLogin: _showPinSheet,
                                 hasUser: _lastUsername != null,
                               ),
@@ -373,24 +293,25 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
                             ],
                           ),
                         ),
-
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: List.generate(
                             2,
                             (i) => AnimatedContainer(
                               duration: const Duration(milliseconds: 250),
-                              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 3, vertical: 8),
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: i == _pageIndex ? Colors.white : Colors.white.withOpacity(0.5),
+                                color: i == _pageIndex
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.5),
                               ),
                             ),
                           ),
                         ),
-
                         const _BottomCardsAndShortcuts(),
                       ],
                     ),
@@ -406,50 +327,201 @@ class _BankStyleLoginScreenState extends State<BankStyleLoginScreen> {
 
   // ----- Helpers -----
 
-  InputDecoration _filledDecoration({required String label, required IconData icon}) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
-      filled: true,
-      fillColor: const Color(0xFFF6F9FF),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-    );
-  }
-
-  String? _required(String? v) => (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null;
-
-  Widget _primaryAction({required String label, required VoidCallback onPressed}) {
-    return SizedBox(
-      height: 52,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0C5DB1),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 0,
-        ),
-        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-
   void _errorSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: Colors.red),
     );
   }
-
-  Widget _sheetHandle() => Center(
-        child: Container(
-          width: 44,
-          height: 5,
-          decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
-        ),
-      );
 }
 
-// ---------- Widgets ----------
+// ====== Bireysel Sheet (AYRI STATEFUL WIDGET) ======
+
+class _BireyselLoginSheet extends StatefulWidget {
+  final VoidCallback onSuccess;
+  const _BireyselLoginSheet({required this.onSuccess});
+
+  @override
+  State<_BireyselLoginSheet> createState() => _BireyselLoginSheetState();
+}
+
+class _BireyselLoginSheetState extends State<_BireyselLoginSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _userCtrl;
+  late final TextEditingController _pwCtrl;
+  late final FocusNode _userFocus;
+  late final FocusNode _pwFocus;
+  bool _didAutofocus = false; // sadece 1 kez autofocus
+
+  @override
+  void initState() {
+    super.initState();
+    _userCtrl = TextEditingController();
+    _pwCtrl = TextEditingController();
+    _userFocus = FocusNode();
+    _pwFocus = FocusNode();
+
+    // sayfa açıldığında 1 kez kullanıcı alanına fokus
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_didAutofocus) {
+        _userFocus.requestFocus();
+        _didAutofocus = true;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _userCtrl.dispose();
+    _pwCtrl.dispose();
+    _userFocus.dispose();
+    _pwFocus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final username = _userCtrl.text.trim();
+    final password = _pwCtrl.text.trim();
+
+    // ignore: avoid_print
+    print('[Erenay][BIREYSEL] try login | u=$username');
+
+    try {
+      final db = context.read<DbProvider>().api;
+      final result = await db.loginDb(username: username, password: password);
+
+      // ignore: avoid_print
+      print(
+          '[Erenay][BIREYSEL] login success | cid=${result.customerId} name=${result.fullName}');
+
+      await SessionManager.saveLastUsername(username);
+      if (result.fullName.isNotEmpty) {
+        await SessionManager.saveLastFullName(result.fullName);
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // sheet kapat
+      widget.onSuccess();
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Erenay][BIREYSEL] login FAIL: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Bilgiler hatalı. Tekrar deneyin.'),
+            backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 18,
+        right: 18,
+        top: 12,
+        bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(3)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              "Bireysel Giriş",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+
+            // Kullanıcı
+            TextFormField(
+              controller: _userCtrl,
+              focusNode: _userFocus,
+              textInputAction: TextInputAction.next,
+              keyboardType: TextInputType.text,
+              decoration: const InputDecoration(
+                labelText: "Müşteri No / T.C. / E-posta",
+                prefixIcon: Icon(Icons.badge_outlined),
+                filled: true,
+                fillColor: Color(0xFFF6F9FF),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14))),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null,
+              onFieldSubmitted: (_) => _pwFocus.requestFocus(),
+            ),
+            const SizedBox(height: 12),
+
+            // Parola
+            TextFormField(
+              controller: _pwCtrl,
+              focusNode: _pwFocus,
+              obscureText: true,
+              maxLength: 6,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: "6 haneli şifre",
+                prefixIcon: Icon(Icons.lock_outline),
+                filled: true,
+                fillColor: Color(0xFFF6F9FF),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14))),
+                counterText: '', // sayaç gizli
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? "Zorunlu alan" : null,
+              onFieldSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 6),
+
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0C5DB1),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: const Text("GİRİŞ",
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {},
+              child: const Text("ŞİFRE OLUŞTUR / UNUTTUM"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- Küçük görsel bileşenler (değişmedi) ----------
 
 class _TopShortcut extends StatelessWidget {
   final IconData icon;
@@ -506,12 +578,11 @@ class _ExistingUserCard extends StatelessWidget {
           backgroundColor: Colors.white,
           child: const CircleAvatar(
             radius: 43,
-            backgroundImage: AssetImage('lib/assets/images/person/teamwork.png'),
+            backgroundImage:
+                AssetImage('lib/assets/images/person/teamwork.png'),
           ),
         ),
         const SizedBox(height: 14),
-
-        // İsim
         Text(
           fullName,
           style: const TextStyle(
@@ -526,7 +597,6 @@ class _ExistingUserCard extends StatelessWidget {
           style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16),
         ),
         const SizedBox(height: 22),
-
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: SizedBox(
@@ -535,17 +605,19 @@ class _ExistingUserCard extends StatelessWidget {
             child: ElevatedButton(
               onPressed: hasUser ? onLogin : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: hasUser ? const Color(0xFF7BC6FF) : Colors.white24,
+                backgroundColor:
+                    hasUser ? const Color(0xFF7BC6FF) : Colors.white24,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const Text("GİRİŞ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              child: const Text("GİRİŞ",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
           ),
         ),
         const SizedBox(height: 14),
-
         TextButton(
           onPressed: () {},
           child: Text(
@@ -580,7 +652,8 @@ class _NewUserCard extends StatelessWidget {
         const SizedBox(height: 14),
         const Text(
           "Yeni Kullanıcı",
-          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+          style: TextStyle(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
         Text(
@@ -592,9 +665,12 @@ class _NewUserCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Row(
             children: [
-              Expanded(child: _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
+              Expanded(
+                  child:
+                      _PrimaryButton(label: "BİREYSEL", onPressed: onBireysel)),
               const SizedBox(width: 12),
-              Expanded(child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
+              Expanded(
+                  child: _PrimaryButton(label: "TİCARİ", onPressed: onTicari)),
             ],
           ),
         ),
@@ -629,10 +705,12 @@ class _PrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF0C5DB1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        child: Text(label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -654,9 +732,12 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
         children: [
           Row(
             children: const [
-              Expanded(child: _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
+              Expanded(
+                  child:
+                      _InfoCard(title: "Mobil Borsa", icon: Icons.bar_chart)),
               SizedBox(width: 12),
-              Expanded(child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
+              Expanded(
+                  child: _InfoCard(title: "Kampanyalar", icon: Icons.campaign)),
             ],
           ),
           const SizedBox(height: 16),
@@ -664,7 +745,8 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: const [
               _QuickTile(icon: Icons.flash_on, label: "FAST\nİşlemleri"),
-              _QuickTile(icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
+              _QuickTile(
+                  icon: Icons.stacked_line_chart, label: "Fiyat ve\nOranlar"),
               _QuickTile(icon: Icons.qr_code_2, label: "Karekod\nİşlemleri"),
               _QuickTile(icon: Icons.more_horiz, label: "Daha\nFazlası"),
             ],
@@ -674,7 +756,8 @@ class _BottomCardsAndShortcuts extends StatelessWidget {
             margin: const EdgeInsets.only(top: 10, bottom: 4),
             width: 120,
             height: 5,
-            decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(3)),
+            decoration: BoxDecoration(
+                color: Colors.black12, borderRadius: BorderRadius.circular(3)),
           ),
         ],
       ),
@@ -700,7 +783,9 @@ class _InfoCard extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFF0C5DB1)),
           const SizedBox(width: 10),
-          Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -718,7 +803,8 @@ class _QuickTile extends StatelessWidget {
       children: [
         Icon(icon, color: const Color(0xFF0C5DB1), size: 28),
         const SizedBox(height: 6),
-        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+        Text(label,
+            textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
@@ -737,26 +823,48 @@ class _NumberPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keys = ['1','2','3','4','5','6','7','8','9','close','0','back'];
+    final keys = [
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      'close',
+      '0',
+      'back'
+    ];
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: keys.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.4,
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1.4,
       ),
       padding: const EdgeInsets.only(bottom: 10),
       itemBuilder: (_, i) {
         final k = keys[i];
         if (k == 'close') {
-          return _PadButton(child: const Text("KAPAT", style: TextStyle(fontWeight: FontWeight.w600)), onTap: onClose);
+          return _PadButton(
+              child: const Text("KAPAT",
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              onTap: onClose);
         }
         if (k == 'back') {
-          return _PadButton(child: const Icon(Icons.backspace_outlined), onTap: onBackspace);
+          return _PadButton(
+              child: const Icon(Icons.backspace_outlined), onTap: onBackspace);
         }
         return _PadButton(
-          child: Text(k, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          child: Text(k,
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           onTap: () => onDigit(k),
         );
       },
@@ -772,7 +880,9 @@ class _PadButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Ink(
-      decoration: BoxDecoration(color: const Color(0xFFF5F7FB), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF5F7FB),
+          borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
