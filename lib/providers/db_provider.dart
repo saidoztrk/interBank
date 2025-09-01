@@ -5,24 +5,28 @@
 import 'package:flutter/foundation.dart';
 import '../services/api_db_manager.dart';
 import '../models/customer.dart';
+import '../models/account.dart';
 
 class DbProvider with ChangeNotifier {
   DbProvider(this.api);
   final ApiDbManager api;
 
-  // İstersen ek state saklayabilirsin:
+  // Müşteri state
   Customer? customer;
+
+  // ✅ Account state
+  List<Account> accounts = [];
+
   bool loading = false;
   String? error;
 
-  // Erenay: opsiyonel müşteri fetch (Home için vs.)
+  // Opsiyonel müşteri fetch (Home için vs.)
   Future<void> loadCustomerById(int customerId) async {
     try {
       loading = true;
       error = null;
       notifyListeners();
 
-      // API hem müşteriNo hem id ile kabul ediyor (biz string gönderiyoruz)
       final c = await api.getCustomer(customerId.toString());
       customer = c;
     } catch (e) {
@@ -33,8 +37,26 @@ class DbProvider with ChangeNotifier {
     }
   }
 
+  // ✅ Yeni: accounts fetch
+  Future<void> loadAccountsByCustomer(int customerId) async {
+    try {
+      loading = true;
+      error = null;
+      notifyListeners();
+
+      final list = await api.getAccountsByCustomer(customerId.toString());
+      accounts = list;
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
   void clear() {
     customer = null;
+    accounts = [];
     loading = false;
     error = null;
     notifyListeners();

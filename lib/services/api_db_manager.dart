@@ -107,22 +107,16 @@ class ApiDbManager {
     print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
 
     if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
+      final decoded = jsonDecode(res.body);
 
-      if (data is! List) {
-        throw Exception('Accounts response is not a list: $data');
+      if (decoded is! List) {
+        throw Exception('Accounts response is not a list: $decoded');
       }
 
-      // Büyük/Küçük harf toleransı ile map et
-      final accounts = data.map<Account>((e) {
-        final m = Map<String, dynamic>.from(e as Map);
-        return Account.fromJson({
-          'accountId': m['AccountId'] ?? m['accountId'] ?? m['Id'] ?? m['id'],
-          'type': m['Type'] ?? m['type'] ?? '',
-          'currency': m['Currency'] ?? m['currency'] ?? 'TRY',
-          'balance': m['Balance'] ?? m['balance'] ?? 0,
-        });
-      }).toList();
+      // ✅ Tüm alanları (Iban, AccountNo, Status, is_blocked, vb.) Account.fromJson ile al
+      final accounts = decoded
+          .map<Account>((e) => Account.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
 
       // ignore: avoid_print
       print('[Erenay][DB] [Accounts] n=${accounts.length}');

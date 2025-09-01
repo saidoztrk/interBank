@@ -51,6 +51,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   String? _error;
 
+  Account? _selectedAccount;
+  String? _productTitle;   // örn: "Vadesiz TRY"
+  String? _displayNumber;  // IBAN ya da AccountNo (model eklenince doldurulacak)
+
   @override
   void initState() {
     super.initState();
@@ -79,19 +83,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${buf.toString()},$decPart ₺';
   }
 
-  double? _selectBalance(List<Account> list) {
+  /// Modelde status / isBlocked olmadığı için yalnızca Type+Currency ile seçim yapıyoruz.
+  Account? _pickPrimaryAccount(List<Account> list) {
     try {
-      final pri = list.firstWhere((a) {
-        final cur = a.currency.toUpperCase();
-        final t = a.type.toLowerCase();
+      return list.firstWhere((a) {
+        final cur = (a.currency).toUpperCase();
+        final t = (a.type).toLowerCase();
         return cur == 'TRY' && (t.contains('vadesiz') || t == 'checking' || t == 'deposit');
       });
-      return pri.balance;
     } catch (_) {
-      final total = list
-          .where((a) => a.currency.toUpperCase() == 'TRY')
-          .fold<double>(0.0, (sum, a) => sum + a.balance);
-      return total == 0.0 ? null : total;
+      return list.isNotEmpty ? list.first : null;
     }
   }
 
@@ -107,7 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final dbp = context.read<DbProvider>();
 
-      // 🔧 ÖNEMLİ: Cache müşteri ID’si, oturumdaki ID ile aynı değilse mutlaka yeniden yükle
       if (dbp.customer == null || dbp.customer!.customerId != cNo) {
         debugPrint('[Home][API] loadCustomerById($cNo) (cache miss or different user)');
         await dbp.loadCustomerById(cNo);
@@ -116,20 +116,38 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       final Customer? cust = dbp.customer;
 
-      debugPrint('[Home][API] getAccountsByCustomer($cNo)');
-      final accounts = await dbp.api.getAccountsByCustomer(cNo.toString());
+      debugPrint('[Home][API] loadAccountsByCustomer($cNo)');
+      await dbp.loadAccountsByCustomer(cNo);
+      final accounts = dbp.accounts;
       debugPrint('[Home][API] accounts fetched: ${accounts.length}');
-      final bal = _selectBalance(accounts);
+
+      final Account? sel = _pickPrimaryAccount(accounts);
+      _selectedAccount = sel;
+
+      _productTitle = (sel == null)
+          ? null
+          : '${sel.type.trim()} ${sel.currency.trim()}'.trim();
+
+      _displayNumber = (sel == null)
+          ? null
+          : ((sel.iban != null && sel.iban!.trim().isNotEmpty)
+              ? sel.iban!.trim()
+              : (sel.accountNo ?? '').toString());
+
+      double? bal;
+      if (sel != null) {
+        bal = sel.balance;
+      } else {
+        final totalTry = accounts
+            .where((a) => (a.currency.toUpperCase()) == 'TRY')
+            .fold<double>(0.0, (sum, a) => sum + a.balance);
+        bal = totalTry == 0.0 ? null : totalTry;
+      }
       final formattedBal = (bal != null) ? _formatTry(bal) : '— ₺';
 
-      // İsim: öncelik API’den gelen customer.fullName
       String name = cust?.fullName ?? '';
-      if (name.isEmpty) {
-        name = SessionManager.username ?? '';
-      }
-      if (name.isEmpty) {
-        name = await SessionManager.getLastFullName() ?? '— —';
-      }
+      if (name.isEmpty) name = SessionManager.username ?? '';
+      if (name.isEmpty) name = await SessionManager.getLastFullName() ?? '— —';
 
       if (!mounted) return;
       setState(() {
@@ -140,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       });
 
-      debugPrint('[Home][Init] ok name=$name custNo=$cNo balance=$formattedBal');
+      debugPrint('[Home][Init] ok name=$name custNo=$cNo balance=$formattedBal product=$_productTitle number=$_displayNumber');
     } catch (e, st) {
       debugPrint('[Home][Error] $e\n$st');
       if (!mounted) return;
@@ -179,11 +197,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             _buildAccountCard(_account),
                             const SizedBox(height: 16),
-                            _buildGreetingCard(),
-                            const SizedBox(height: 16),
                             _buildQuickActions(),
-                            const SizedBox(height: 10),
-                            _buildFunStrip(),
+                            const SizedBox(height: 16),
+                            _buildTransactionsPreview(), // ✅ yeni alan
                           ],
                         ),
                       ),
@@ -371,76 +387,148 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ========= Kredi kartı stili kart =========
   Widget _buildAccountCard(AccountInfo? acc) {
+    final screenW = MediaQuery.of(context).size.width;
+    final contentW = math.min(screenW - 32, 640.0);
+    final cardH = contentW / 1.58;
+    final scale = (screenW / 390).clamp(0.90, 1.10);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.accent.withOpacity(0.35), width: 1),
-          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 46, height: 46,
-                  decoration: BoxDecoration(color: AppColors.accent.withOpacity(.2), shape: BoxShape.circle),
-                  child: const Icon(Icons.account_circle, color: AppColors.accent, size: 30),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Center(
+        child: SizedBox(
+          width: contentW,
+          height: cardH,
+          child: Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF251E73), Color(0xFF2AA4FF)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 8)),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(acc?.adSoyad ?? "— —",
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w800, fontSize: 17)),
-                      const SizedBox(height: 2),
-                      Text("Müşteri No: ${acc?.musteriNo ?? "— —"}",
-                          style: const TextStyle(color: AppColors.textSub, fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              Positioned(
+                left: -contentW * .15,
+                top: cardH * .05,
+                child: Container(
+                  width: contentW * .65,
+                  height: contentW * .65,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1E6A).withOpacity(.55),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: contentW * .04,
+                top: cardH * .10,
+                child: Container(
+                  width: contentW * .35,
+                  height: contentW * .35,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.22),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            acc?.adSoyad ?? "— —",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 19 * scale,
+                              letterSpacing: .2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => setState(() => _hideBalance = !_hideBalance),
+                          behavior: HitTestBehavior.opaque,
+                          child: Icon(
+                            _hideBalance ? Icons.visibility_off : Icons.visibility,
+                            color: Colors.white.withOpacity(.90),
+                            size: 20 * scale,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _productTitle ?? "Vadesiz TRY",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(.90),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5 * scale,
+                        letterSpacing: .2,
+                      ),
+                    ),
+                    const Spacer(),
+                    if ((_displayNumber ?? '').isNotEmpty) ...[
+                      Text(
+                        _displayNumber!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(.95),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14 * scale,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                     ],
-                  ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _hideBalance ? "•••••• ₺" : (acc?.bakiye ?? "— ₺"),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 22 * scale,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          "VISA",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16 * scale,
+                            letterSpacing: .6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => setState(() => _hideBalance = !_hideBalance),
-                  behavior: HitTestBehavior.opaque,
-                  child: Icon(
-                    _hideBalance ? Icons.visibility_off : Icons.visibility,
-                    color: Colors.white.withOpacity(.85),
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF10B981), Color(0xFF059669)]),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 8, offset: Offset(0, 4))],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("Bakiye",
-                      style: TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: .2)),
-                  const SizedBox(height: 4),
-                  Text(
-                    _hideBalance ? "•••••• ₺" : (acc?.bakiye ?? "— ₺"),
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -448,51 +536,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _navyBubble(double size, Color color) =>
       Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
-
-  Widget _buildGreetingCard() {
-    final hour = DateTime.now().hour;
-    final greet = hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.accent.withOpacity(0.20), width: 1),
-          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: AppColors.accent.withOpacity(0.2), shape: BoxShape.circle),
-              child: const Text("⚓", style: TextStyle(fontSize: 18)),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Ahoy, Kaptan Team 1! 🏴‍☠️",
-                      style: TextStyle(color: AppColors.textLight, fontSize: 16, fontWeight: FontWeight.w700)),
-                  SizedBox(height: 2),
-                  Text("Bugün hangi denizleri fethedeceğiz? ⛵",
-                      style: TextStyle(color: AppColors.textSub, fontSize: 13)),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration:
-                  BoxDecoration(color: AppColors.accent.withOpacity(.25), borderRadius: BorderRadius.circular(999)),
-              child: Text(greet, style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildQuickActions() {
     return Padding(
@@ -509,6 +552,140 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ========= Son İşlemler (dummy) =========
+  Widget _buildTransactionsPreview() {
+    final items = <_TxItem>[
+      _TxItem(icon: Icons.opacity,    iconBg: const Color(0xFF5B6CFF), title: 'Su Faturası',       sub: 'Başarısız',   amount: -280,  date: DateTime.now()),
+      _TxItem(icon: Icons.work,       iconBg: const Color(0xFFFF5B8A), title: 'Maaş: Ekim',       sub: 'Başarılı',    amount: 1200,  date: DateTime.now().subtract(const Duration(days: 1))),
+      _TxItem(icon: Icons.bolt,       iconBg: const Color(0xFF28C2FF), title: 'Elektrik Faturası', sub: 'Başarılı',    amount: -480,  date: DateTime.now().subtract(const Duration(days: 1))),
+      _TxItem(icon: Icons.card_giftcard, iconBg: const Color(0xFFFFA726), title: 'Jane gönd.',    sub: 'Gelir',       amount: 500,   date: DateTime.now().subtract(const Duration(days: 1))),
+      _TxItem(icon: Icons.wifi,       iconBg: const Color(0xFF00C49A), title: 'İnternet',         sub: 'Başarılı',    amount: -100,  date: DateTime.now().subtract(const Duration(days: 2))),
+    ];
+
+    String headerFor(DateTime d) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final that  = DateTime(d.year, d.month, d.day);
+      if (that == today) return 'Bugün';
+      if (that == today.subtract(const Duration(days: 1))) return 'Dün';
+      return '${that.day.toString().padLeft(2, '0')}.${that.month.toString().padLeft(2, '0')}.${that.year}';
+    }
+
+    void goAll() {
+      try {
+        Navigator.pushNamed(context, '/transactions');
+      } catch (_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('İşlemler ekranı henüz eklenmedi.')),
+        );
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: GestureDetector(
+        onTap: goAll,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.accent.withOpacity(.20), width: 1),
+            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+          child: Column(
+            children: [
+              // Header
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Son İşlemler',
+                        style: TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w800, fontSize: 16)),
+                  ),
+                  TextButton(
+                    onPressed: goAll,
+                    child: const Text('Tümünü gör', style: TextStyle(color: AppColors.textSub, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Grouped list (sadece görsel)
+              ..._buildTxGroupedList(items, headerFor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildTxGroupedList(List<_TxItem> src, String Function(DateTime) headerFor) {
+    final out = <Widget>[];
+    String? lastHeader;
+    for (final t in src) {
+      final h = headerFor(t.date);
+      if (h != lastHeader) {
+        if (lastHeader != null) {
+          out.add(const SizedBox(height: 8));
+        }
+        out.add(Row(
+          children: [
+            Text(h, style: const TextStyle(color: AppColors.textSub, fontWeight: FontWeight.w700)),
+          ],
+        ));
+        out.add(const SizedBox(height: 8));
+        lastHeader = h;
+      }
+      out.add(_txRow(t));
+      out.add(Divider(color: Colors.white.withOpacity(.06), height: 1));
+    }
+    return out;
+  }
+
+  Widget _txRow(_TxItem t) {
+    final isIncome = t.amount >= 0;
+    final amountStr = (isIncome ? '+' : '-') +
+        _formatTry(t.amount.abs().toDouble()).replaceAll(' ₺', ''); // miktar +/-
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(color: t.iconBg, borderRadius: BorderRadius.circular(12)),
+            child: Icon(t.icon, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const SizedBox(),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(t.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(t.sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textSub, fontSize: 12.5)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$amountStr ₺',
+            style: TextStyle(
+              color: isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _actionChip(IconData icon, String label, Color color) => Column(
         children: [
           Container(
@@ -519,47 +696,6 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 6),
           Text(label, style: const TextStyle(fontSize: 11.5, color: AppColors.textLight, fontWeight: FontWeight.w600)),
         ],
-      );
-
-  Widget _buildFunStrip() {
-    return SizedBox(
-      height: 110,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        children: [
-          _funCard("🎯 Hedef: %45", "Kaptan primleriniz", [AppColors.accent, Colors.orange]),
-          _funCard("📉 2,99", "Denizci faizi", [Color(0xFF10B981), Color(0xFF059669)]),
-          _funCard("📊 Notunu Gör", "Kaptan puanın hazır", [Colors.purple, Colors.indigo]),
-          _funCard("🛡️ Güvende", "Kaptan korumasında", [AppColors.primary, AppColors.primary2]),
-        ],
-      ),
-    );
-  }
-
-  Widget _funCard(String title, String sub, List<Color> gr) => Container(
-        width: 180,
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: gr),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 8, offset: Offset(0, 4))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
-            const SizedBox(height: 6),
-            Text(sub, style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(.2), borderRadius: BorderRadius.circular(12)),
-              child: const Text("Detay", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
       );
 
   Widget _navIcon(String asset, String label, bool selected, VoidCallback onTap) {
@@ -615,6 +751,23 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+class _TxItem {
+  final IconData icon;
+  final Color iconBg;
+  final String title;
+  final String sub;
+  final int amount; // + gelir, - gider
+  final DateTime date;
+  _TxItem({
+    required this.icon,
+    required this.iconBg,
+    required this.title,
+    required this.sub,
+    required this.amount,
+    required this.date,
+  });
 }
 
 class _BottomWaveClipper extends CustomClipper<Path> {
