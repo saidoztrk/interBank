@@ -13,6 +13,7 @@ import 'providers/db_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/cards_screen.dart'; // ✅ yeni import
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +58,7 @@ class InterBankApp extends StatelessWidget {
         '/login': (_) => const BankStyleLoginScreen(),
         '/home' : (_) => const HomeScreen(),
         '/chat' : (_) => const ChatScreen(),
+        '/cards': (_) => const CardsScreen(), // ✅ yeni route
       },
     );
   }

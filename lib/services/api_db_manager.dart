@@ -1,5 +1,5 @@
 // lib/services/api_db_manager.dart
-// Erenay tarafından eklendi: Azure DB API istemcisi (login + müşteri + hesaplar)
+// Azure DB API istemcisi (login + müşteri + hesaplar + kartlar + işlemler)
 // Log tag: [Erenay][DB]
 
 import 'dart:convert';
@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 
 import '../models/customer.dart';
 import '../models/account.dart';
+import '../models/debit_card.dart';
+import '../models/credit_card.dart';
+import '../models/transaction_item.dart';
 import 'session_manager.dart';
 
 class ApiDbManager {
@@ -18,132 +21,146 @@ class ApiDbManager {
 
   Map<String, String> _jsonHeaders() => {
         'Content-Type': 'application/json',
-        // ileride bearer token olursa buraya Authorization ekleriz
       };
 
-  Uri _u(String path) => Uri.parse('$baseUrl$path');
+  Uri _u(String path, [Map<String, dynamic>? q]) {
+    final uri = Uri.parse('$baseUrl$path');
+    if (q == null || q.isEmpty) return uri;
+    return uri.replace(queryParameters: {
+      ...uri.queryParameters,
+      ...q.map((k, v) => MapEntry(k, v?.toString())),
+    });
+  }
 
-  /// Login (backend token istemiyor; CustomerId & FullName dönüyor)
-  /// username: "9001" | "11111111111" | "seda.sayan@example.com"
-  /// password: "476982"
+  // ---------- Helpers ----------
+  List<dynamic> _asList(dynamic body) {
+    if (body is List) return body;
+    if (body is Map && body['value'] is List) return body['value'] as List;
+    return const [];
+  }
+
+  T _decode<T>(http.Response res) {
+    final text = res.body;
+    try {
+      return json.decode(text) as T;
+    } catch (_) {
+      if (T == Map<String, dynamic>) return <String, dynamic>{} as T;
+      if (T == List<dynamic>) return <dynamic>[] as T;
+      rethrow;
+    }
+  }
+
+  // ---------- Auth ----------
   Future<CustomerLoginResult> loginDb({
     required String username,
     required String password,
   }) async {
     final uri = _u('/api/auth/login');
-    // ignore: avoid_print
     print('[Erenay][DB] POST $uri | username=$username, pin=******');
 
-    final res = await _client
-        .post(
-          uri,
-          headers: _jsonHeaders(),
-          body: jsonEncode({'username': username, 'password': password}),
-        )
-        .timeout(const Duration(seconds: 15));
+    final res = await _client.post(
+      uri,
+      headers: _jsonHeaders(),
+      body: jsonEncode({'username': username, 'password': password}),
+    );
 
-    // ignore: avoid_print
     print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
 
-    if (res.statusCode == 200) {
-      final dynamic body = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final m = _decode<Map<String, dynamic>>(res);
+      final cid = m['CustomerId'] ?? m['customerId'] ?? m['id'];
+      final name = m['FullName'] ?? m['fullName'] ?? m['name'] ?? '';
+      final parsedId = (cid is String) ? int.tryParse(cid) ?? 0 : (cid ?? 0) as int;
 
-      // Backend tek obje de döndürebilir, liste de; ikisini de ele al
-      final Map<String, dynamic> obj = body is List && body.isNotEmpty
-          ? (body.first as Map<String, dynamic>)
-          : (body as Map<String, dynamic>);
+      await SessionManager.saveCustomerNo(parsedId);
+      await SessionManager.saveLastFullName(name.toString());
 
-      final int customerId = _asInt(obj['CustomerId'] ?? obj['customerId']);
-      final String fullName =
-          (obj['FullName'] ?? obj['fullName'] ?? '').toString();
-
-      // --- Session kayıtları ---
-      await SessionManager.saveUsername(
-          fullName.isNotEmpty ? fullName : username);
-      await SessionManager.saveCustomerNo(customerId);
-
-      // PIN akışı için "son kullanıcı" bilgileri
-      await SessionManager.saveLastUsername(username);
-      if (fullName.isNotEmpty) {
-        await SessionManager.saveLastFullName(fullName);
-      }
-
-      return CustomerLoginResult(customerId: customerId, fullName: fullName);
+      return CustomerLoginResult(customerId: parsedId, fullName: name.toString());
     }
-
-    throw Exception('DB API login başarısız: ${res.statusCode} ${res.body}');
+    throw Exception('Login failed (${res.statusCode}): ${res.body}');
   }
 
-  /// Müşteri detayı
-  Future<Customer> getCustomer(String customerNoOrId) async {
-    final uri = _u('/api/customers/$customerNoOrId');
-    // ignore: avoid_print
+  // ---------- Customer ----------
+  Future<Customer> getCustomer(int customerId) async {
+    final uri = _u('/api/customers/$customerId');
     print('[Erenay][DB] GET $uri');
 
-    final res =
-        await _client.get(uri, headers: _jsonHeaders()).timeout(const Duration(seconds: 15));
-
-    // ignore: avoid_print
-    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
-
-    if (res.statusCode == 200) {
-      final j = jsonDecode(res.body) as Map<String, dynamic>;
-      return Customer.fromJson(j);
+    final res = await _client.get(uri, headers: _jsonHeaders());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final m = _decode<Map<String, dynamic>>(res);
+      return Customer.fromJson(m);
     }
-    throw Exception('Customer alınamadı: ${res.statusCode} ${res.body}');
+    throw Exception('getCustomer failed (${res.statusCode}): ${res.body}');
   }
 
-  /// Hesap listesi: GET /api/accounts/by-customer/{customer_id}
-  /// Home ekranındaki bakiye için burayı kullanıyoruz.
-  Future<List<Account>> getAccountsByCustomer(String customerId) async {
+  // ---------- Accounts ----------
+  Future<List<Account>> getAccountsByCustomer(int customerId) async {
     final uri = _u('/api/accounts/by-customer/$customerId');
-    // ignore: avoid_print
     print('[Erenay][DB] GET $uri');
 
-    final res =
-        await _client.get(uri, headers: _jsonHeaders()).timeout(const Duration(seconds: 15));
-
-    // ignore: avoid_print
+    final res = await _client.get(uri, headers: _jsonHeaders());
     print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
-
-    if (res.statusCode == 200) {
-      final decoded = jsonDecode(res.body);
-
-      if (decoded is! List) {
-        throw Exception('Accounts response is not a list: $decoded');
-      }
-
-      // ✅ Tüm alanları (Iban, AccountNo, Status, is_blocked, vb.) Account.fromJson ile al
-      final accounts = decoded
-          .map<Account>((e) => Account.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-
-      // ignore: avoid_print
-      print('[Erenay][DB] [Accounts] n=${accounts.length}');
-      return accounts;
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final any = _decode<dynamic>(res);
+      final list = _asList(any);
+      return list.map((e) => Account.fromJson(e as Map<String, dynamic>)).toList();
     }
+    throw Exception('getAccountsByCustomer failed (${res.statusCode}): ${res.body}');
+  }
 
-    throw Exception('Accounts alınamadı: ${res.statusCode} ${res.body}');
+  // ---------- Debit Cards ----------
+  Future<List<DebitCard>> getDebitCardsByCustomer(int customerId) async {
+    final uri = _u('/api/debit-cards/by-customer/$customerId');
+    print('[Erenay][DB] GET $uri');
+
+    final res = await _client.get(uri, headers: _jsonHeaders());
+    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final any = _decode<dynamic>(res);
+      final list = _asList(any);
+      return list.map((e) => DebitCard.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    throw Exception('getDebitCardsByCustomer failed (${res.statusCode}): ${res.body}');
+  }
+
+  // ---------- Credit Cards ----------
+  Future<List<CreditCard>> getCreditCardsByCustomer(int customerId) async {
+    final uri = _u('/api/credit-cards/by-customer/$customerId');
+    print('[Erenay][DB] GET $uri');
+
+    final res = await _client.get(uri, headers: _jsonHeaders());
+    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final any = _decode<dynamic>(res);
+      final list = _asList(any);
+      return list.map((e) => CreditCard.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    throw Exception('getCreditCardsByCustomer failed (${res.statusCode}): ${res.body}');
+  }
+
+  // ---------- Transactions (by account) ----------
+  /// /api/transactions/by-account/{accountId}?limit=20
+  Future<List<TransactionItem>> getTransactionsByAccount(
+    String accountId, {
+    int limit = 20,
+  }) async {
+    final uri = _u('/api/transactions/by-account/$accountId', {'limit': limit});
+    print('[Erenay][DB] GET $uri');
+
+    final res = await _client.get(uri, headers: _jsonHeaders());
+    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final any = _decode<dynamic>(res);
+      final list = _asList(any);
+      return list
+          .map((e) => TransactionItem.fromAccountJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('getTransactionsByAccount failed (${res.statusCode}): ${res.body}');
   }
 }
 
-// ----------------- yardımcılar -----------------
-
-int _asInt(dynamic v) {
-  if (v is int) return v;
-  if (v is String) return int.tryParse(v) ?? 0;
-  return 0;
-}
-
-double _asDouble(dynamic v) {
-  if (v is num) return v.toDouble();
-  if (v is String) {
-    final fixed = v.replaceAll(',', '.'); // "12,5" -> "12.5"
-    return double.tryParse(fixed) ?? 0.0;
-  }
-  return 0.0;
-}
-
+// Basit login sonucu DTO
 class CustomerLoginResult {
   final int customerId;
   final String fullName;
