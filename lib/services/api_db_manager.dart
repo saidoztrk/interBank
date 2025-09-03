@@ -1,6 +1,10 @@
 // lib/services/api_db_manager.dart
-// Azure DB API istemcisi (login + müşteri + hesaplar + kartlar + işlemler)
+// Azure DB API istemcisi (login + müşteri + hesaplar + kartlar + işlemler + transferler)
 // Log tag: [Erenay][DB]
+//
+// Geriye dönük uyumluluk için loginDb imzası güncellendi:
+// - loginDb({required String username, String? pin, String? password})
+//   Mevcut çağrılar (password: ...) ve yeni çağrılar (pin: ...) sorunsuz çalışır.
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -10,11 +14,11 @@ import '../models/account.dart';
 import '../models/debit_card.dart';
 import '../models/credit_card.dart';
 import '../models/transaction_item.dart';
+import '../models/transfer_history_item.dart';
 import 'session_manager.dart';
 
 class ApiDbManager {
-  ApiDbManager(this.baseUrl, {http.Client? client})
-      : _client = client ?? http.Client();
+  ApiDbManager(this.baseUrl, {http.Client? client}) : _client = client ?? http.Client();
 
   final String baseUrl; // örn: https://interntech-db-api.azurewebsites.net
   final http.Client _client;
@@ -26,10 +30,12 @@ class ApiDbManager {
   Uri _u(String path, [Map<String, dynamic>? q]) {
     final uri = Uri.parse('$baseUrl$path');
     if (q == null || q.isEmpty) return uri;
-    return uri.replace(queryParameters: {
-      ...uri.queryParameters,
-      ...q.map((k, v) => MapEntry(k, v?.toString())),
-    });
+    return uri.replace(
+      queryParameters: {
+        ...uri.queryParameters,
+        ...q.map((k, v) => MapEntry(k, v?.toString())),
+      },
+    );
   }
 
   // ---------- Helpers ----------
@@ -51,34 +57,40 @@ class ApiDbManager {
   }
 
   // ---------- Auth ----------
-  Future<CustomerLoginResult> loginDb({
-    required String username,
-    required String password,
-  }) async {
-    final uri = _u('/api/auth/login');
-    print('[Erenay][DB] POST $uri | username=$username, pin=******');
-
-    final res = await _client.post(
-      uri,
-      headers: _jsonHeaders(),
-      body: jsonEncode({'username': username, 'password': password}),
-    );
-
-    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
-
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final m = _decode<Map<String, dynamic>>(res);
-      final cid = m['CustomerId'] ?? m['customerId'] ?? m['id'];
-      final name = m['FullName'] ?? m['fullName'] ?? m['name'] ?? '';
-      final parsedId = (cid is String) ? int.tryParse(cid) ?? 0 : (cid ?? 0) as int;
-
-      await SessionManager.saveCustomerNo(parsedId);
-      await SessionManager.saveLastFullName(name.toString());
-
-      return CustomerLoginResult(customerId: parsedId, fullName: name.toString());
-    }
-    throw Exception('Login failed (${res.statusCode}): ${res.body}');
+  /// Geriye dönük uyumlu login:
+  /// - Eski çağrılar: loginDb(username: ..., password: ...)
+  /// - Yeni çağrılar: loginDb(username: ..., pin: ...)
+  /// İçeride API'ye 'pin' alanı gönderilir.
+Future<CustomerLoginResult> loginDb({
+  required String username,
+  String? pin,
+  String? password,
+}) async {
+  final usedPin = pin ?? password;
+  if (usedPin == null || usedPin.isEmpty) {
+    throw ArgumentError('loginDb: pin/password parametresi zorunludur.');
   }
+
+  final uri = _u('/api/auth/login');
+  final body = json.encode({'username': username, 'password': usedPin}); // Changed 'pin' to 'password'
+  print('[Erenay][DB] POST $uri | username=$username, password=******');
+
+  final res = await _client.post(uri, headers: _jsonHeaders(), body: body);
+  print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
+
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    final m = _decode<Map<String, dynamic>>(res);
+    final cid = m['CustomerId'] ?? m['customerId'] ?? m['id'];
+    final name = m['FullName'] ?? m['fullName'] ?? m['name'] ?? '';
+    final parsedId = (cid is String) ? int.tryParse(cid) ?? 0 : (cid ?? 0) as int;
+
+    await SessionManager.saveCustomerNo(parsedId);
+    await SessionManager.saveLastFullName(name.toString());
+
+    return CustomerLoginResult(customerId: parsedId, fullName: name.toString());
+  }
+  throw Exception('Login failed (${res.statusCode}): ${res.body}');
+}
 
   // ---------- Customer ----------
   Future<Customer> getCustomer(int customerId) async {
@@ -86,6 +98,7 @@ class ApiDbManager {
     print('[Erenay][DB] GET $uri');
 
     final res = await _client.get(uri, headers: _jsonHeaders());
+    print('[Erenay][DB] <= ${res.statusCode} ${res.body}');
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final m = _decode<Map<String, dynamic>>(res);
       return Customer.fromJson(m);
@@ -157,6 +170,43 @@ class ApiDbManager {
           .toList();
     }
     throw Exception('getTransactionsByAccount failed (${res.statusCode}): ${res.body}');
+  }
+
+  // ---------- Transfers (by account) ----------
+  /// /api/transfers/by-account/{accountId}
+  /// Dönüş: Swagger örneğinde array. Burada TransferHistoryItem listesine map ediyoruz.
+  Future<List<TransferHistoryItem>> getTransfersByAccount(
+    String accountId, {
+    int? limit,
+  }) async {
+    final qp = <String, dynamic>{};
+    if (limit != null) qp['limit'] = limit;
+    final uri = _u('/api/transfers/by-account/$accountId', qp);
+    final t0 = DateTime.now();
+    print('[Erenay][DB][TRANSFER] GET $uri');
+
+    final res = await _client.get(uri, headers: _jsonHeaders());
+    final dur = DateTime.now().difference(t0).inMilliseconds;
+    print('[Erenay][DB][TRANSFER] <= ${res.statusCode} (${dur}ms) ${res.body}');
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final any = _decode<dynamic>(res);
+      final list = _asList(any);
+      // Aktif hesap yön tespiti için accountId'yi doğrudan geçiriyoruz
+      final items = list
+          .map((e) => TransferHistoryItem.fromTransferJson(
+                e as Map<String, dynamic>,
+                activeAccount: accountId,
+              ))
+          .toList();
+      print('[Erenay][MAP][HISTORY] mapped=${items.length} '
+          '| first=${items.isNotEmpty ? items.first.id : '-'} '
+          '| dir=${items.isNotEmpty ? items.first.direction.name : '-'} '
+          '| amt=${items.isNotEmpty ? items.first.amount : '-'} '
+          '| ccy=${items.isNotEmpty ? items.first.currency : '-'}');
+      return items;
+    }
+    throw Exception('getTransfersByAccount failed (${res.statusCode}): ${res.body}');
   }
 }
 

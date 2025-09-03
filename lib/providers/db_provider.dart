@@ -1,6 +1,3 @@
-// lib/providers/db_provider.dart
-// DB API + state (müşteri, hesaplar, kartlar, seçim, son işlemler)
-
 import 'package:flutter/foundation.dart';
 
 import '../services/api_db_manager.dart';
@@ -9,6 +6,9 @@ import '../models/account.dart';
 import '../models/debit_card.dart';
 import '../models/credit_card.dart';
 import '../models/transaction_item.dart';
+import '../models/transfer_history_item.dart';
+// lib/providers/db_provider.dart
+// DB API + state (müşteri, hesaplar, kartlar, seçim, son işlemler + transfer geçmişi)
 
 class DbProvider with ChangeNotifier {
   DbProvider(this.api);
@@ -43,6 +43,10 @@ class DbProvider with ChangeNotifier {
   final List<TransactionItem> _recentTransactions = <TransactionItem>[];
   List<TransactionItem> get recentTransactions => List.unmodifiable(_recentTransactions);
 
+  // ---- Transfer Geçmişi (account-based) ----
+  final List<TransferHistoryItem> _transfers = <TransferHistoryItem>[];
+  List<TransferHistoryItem> get transfers => List.unmodifiable(_transfers);
+
   bool loading = false;
   String? error;
 
@@ -70,6 +74,9 @@ class DbProvider with ChangeNotifier {
 
       final accs = await api.getAccountsByCustomer(customerId);  // <-- INT
       _accounts = accs;
+      if (kDebugMode) {
+        print('[Erenay][DBP] loaded ${_accounts.length} accounts');
+      }
     } catch (e) {
       error = e.toString();
     } finally {
@@ -154,6 +161,42 @@ class DbProvider with ChangeNotifier {
     }
   }
 
+  // ---- Transfer Geçmişi: Hesap numarasına göre (login olan hesabın accountNo'su) ----
+  Future<void> loadTransfersByAccount(String accountId, {int? limit}) async {
+    try {
+      loading = true; error = null; notifyListeners();
+
+      if (kDebugMode) {
+        print('[Erenay][HOME][FEED] call transfers | acc=$accountId');
+      }
+
+      _transfers
+        ..clear()
+        ..addAll(await api.getTransfersByAccount(accountId, limit: limit));
+
+      if (_transfers.isNotEmpty) {
+        _transfers.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+        final newest = _transfers.first.occurredAt.toIso8601String();
+        final oldest = _transfers.last.occurredAt.toIso8601String();
+        if (kDebugMode) {
+          print('[Erenay][HOME][FEED] result | count=${_transfers.length} '
+              '| newest=$newest | oldest=$oldest');
+        }
+      } else {
+        if (kDebugMode) {
+          print('[Erenay][HOME][FEED] result | count=0');
+        }
+      }
+    } catch (e) {
+      error = e.toString();
+      if (kDebugMode) {
+        print('[Erenay][ERR][HOME] transfers failed | acc=$accountId | msg=$e');
+      }
+    } finally {
+      loading = false; notifyListeners();
+    }
+  }
+
   // ---- Temizle ----
   void clear() {
     _customer = null;
@@ -164,6 +207,7 @@ class DbProvider with ChangeNotifier {
     _selectedDebit = null;
     _selectedCredit = null;
     _recentTransactions.clear();
+    _transfers.clear();
     loading = false;
     error = null;
     notifyListeners();

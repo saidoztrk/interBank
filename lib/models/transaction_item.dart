@@ -4,7 +4,7 @@
 /// - /api/transactions/by-account/{account_id}   (hesap/debit)
 /// - /api/credit-card-transactions/...          (kredi kartı)
 ///
-/// Not: Alan adları Swagger’da snake_case; ama tolerant parser var.
+/// Not: Alan adları Swagger'da snake_case; ama tolerant parser var.
 class TransactionItem {
   /// Uygulama içi benzersiz kimlik (stringleştirilmiş)
   final String id;
@@ -144,7 +144,19 @@ class TransactionItem {
         'txnDate': txnDate,
       };
 
-  /// UI yardımcıları
+  // UI yardımcıları - BUNLARI EKLEYİN:
   bool get isIncome => amount >= 0;
   String get sign => isIncome ? '+' : '-';
+  
+  // Yeni screen için ek property'ler:
+  DateTime? get date {
+    try {
+      return DateTime.tryParse(txnDate);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  String? get merchantName => description;
+  String? get category => type;
 }

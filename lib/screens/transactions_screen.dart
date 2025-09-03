@@ -1,10 +1,12 @@
 // lib/screens/transactions_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/foundation.dart';
 
-// DbProvider/Modeller sende varsa (transfer/payment vs.)
-// burada içeri alıp gerçek veriyle doldurabiliriz.
-// import '../providers/db_provider.dart';
+import '../providers/db_provider.dart';
+import '../models/account.dart';
+import '../models/transfer_history_item.dart';
+import '../models/transaction_item.dart';
 
 class AppColors {
   static const background = Color(0xFF0A1628);
@@ -27,100 +29,228 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  // Sekmeler
   int _tab = 0; // 0: Tümü, 1: Faturalar, 2: Transfer, 3: Kart
+  bool _initialized = false;
+  bool _isLoading = false;
 
-  // Demo veriler — gerçek API/DbProvider bağlayınca burayı kaldıracağız.
-  late final List<_Tx> _all = [
-    _Tx(
-        title: 'Elektrik Faturası',
-        sub: 'Başarısız',
-        amount: -480,
-        date: DateTime(2019, 10, 30),
-        kind: _Kind.bill,
-        status: _Status.fail),
-    _Tx(
-        title: 'Su Faturası',
-        sub: 'Başarılı',
-        amount: -280,
-        date: DateTime(2019, 10, 22),
-        kind: _Kind.bill,
-        status: _Status.ok),
-    _Tx(
-        title: 'Maaş: Ekim',
-        sub: 'Gelir',
-        amount: 1200,
-        date: DateTime(2019, 9, 30),
-        kind: _Kind.card,
-        status: _Status.ok),
-    _Tx(
-        title: 'Jane\'e Gönderim',
-        sub: 'Havale',
-        amount: -500,
-        date: DateTime(2019, 9, 28),
-        kind: _Kind.transfer,
-        status: _Status.ok),
-    _Tx(
-        title: 'İnternet',
-        sub: 'Başarılı',
-        amount: -100,
-        date: DateTime(2019, 8, 30),
-        kind: _Kind.bill,
-        status: _Status.ok),
-    _Tx(
-        title: 'ATM Yatırma',
-        sub: 'Nakit',
-        amount: 750,
-        date: DateTime(2019, 8, 18),
-        kind: _Kind.card,
-        status: _Status.ok),
-    _Tx(
-        title: 'Kira Ödemesi',
-        sub: 'EFT',
-        amount: -4800,
-        date: DateTime(2019, 7, 30),
-        kind: _Kind.transfer,
-        status: _Status.ok),
-    _Tx(
-        title: 'Mobil Fatura',
-        sub: 'Başarılı',
-        amount: -140,
-        date: DateTime(2019, 7, 22),
-        kind: _Kind.bill,
-        status: _Status.ok),
-    _Tx(
-        title: 'Market (Kart)',
-        sub: 'Temassız',
-        amount: -360,
-        date: DateTime(2019, 6, 30),
-        kind: _Kind.card,
-        status: _Status.ok),
-    _Tx(
-        title: 'Elektrik Faturası',
-        sub: 'Başarılı',
-        amount: -480,
-        date: DateTime(2019, 5, 30),
-        kind: _Kind.bill,
-        status: _Status.ok),
-  ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+    });
+    
+    _initialized = true;
+  }
 
-  List<_Tx> get _filtered {
+  Future<void> _initializeData() async {
+    if (_isLoading) return;
+    
+    setState(() => _isLoading = true);
+    
+    try {
+      final dbp = Provider.of<DbProvider>(context, listen: false);
+      
+      if (kDebugMode) {
+        print('[Erenay][TXNS] Initializing transaction data...');
+        print('[Erenay][TXNS] Available accounts: ${dbp.accounts.length}');
+      }
+
+      if (dbp.accounts.isNotEmpty) {
+        final Account acc = dbp.accounts.first;
+        final accountId = acc.accountId ?? acc.accountId;
+        
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Loading transfers for account: $accountId');
+        }
+        
+        await dbp.loadTransfersByAccount(accountId);
+        
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Loaded ${dbp.transfers.length} transfers');
+        }
+      } else {
+        if (kDebugMode) {
+          print('[Erenay][TXNS] No accounts available');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[Erenay][TXNS] Error loading transfers: $e');
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Transfer geçmişi yüklenirken hata: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  List<_Tx> _mapTransfers(List<TransferHistoryItem> list) {
+    if (kDebugMode) {
+      print('[Erenay][TXNS] Mapping ${list.length} transfers');
+    }
+    
+    return list.map((t) {
+      try {
+        final isIncome = t.direction == TransferDirection.IN;
+        
+        // Status mapping - daha güvenli
+        _Status status;
+        final statusLower = t.status.toLowerCase();
+        if (statusLower.contains('posted') || statusLower.contains('success') || statusLower.contains('completed')) {
+          status = _Status.ok;
+        } else if (statusLower.contains('pend') || statusLower.contains('process')) {
+          status = _Status.warn;
+        } else {
+          status = _Status.fail;
+        }
+
+        // Amount mapping - null check eklendi
+        final amountAsInt = (t.amount).round() * (isIncome ? 1 : -1);
+
+        // Title - daha dinamik
+        String title = t.title;
+        if (title.isEmpty || title == t.counterparty) {
+          title = isIncome ? 'Gelen Havale' : 'Giden Havale';
+        }
+
+        // Sub text - daha anlamlı
+        String sub = 'Havale';
+        if (t.counterparty.isNotEmpty && t.counterparty != title) {
+          sub = 'Hesap: ${t.counterparty}';
+        }
+
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Mapped transfer: ${t.id} - $title - ${isIncome ? '+' : '-'}${t.amount} ${t.currency}');
+        }
+
+        return _Tx(
+          title: title,
+          sub: sub,
+          amount: amountAsInt,
+          date: t.occurredAt,
+          kind: _Kind.transfer,
+          status: status,
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Error mapping transfer ${t.id}: $e');
+        }
+        // Fallback _Tx
+        return _Tx(
+          title: 'Transfer Hatası',
+          sub: 'Hata',
+          amount: 0,
+          date: DateTime.now(),
+          kind: _Kind.transfer,
+          status: _Status.fail,
+        );
+      }
+    }).toList();
+  }
+
+  List<_Tx> _mapCardTx(List<TransactionItem> list) {
+    if (kDebugMode) {
+      print('[Erenay][TXNS] Mapping ${list.length} card transactions');
+    }
+    
+    return list.map((x) {
+      try {
+        final isIncome = x.isIncome;
+        final statusText = (x.status ?? '').toLowerCase();
+        final status = statusText.contains('pend')
+            ? _Status.warn
+            : (statusText.isEmpty || statusText.contains('ok') || statusText.contains('post'))
+                ? _Status.ok
+                : _Status.fail;
+
+        final dt = x.date ?? DateTime.now();
+        final title = (x.merchantName?.isNotEmpty == true)
+            ? x.merchantName!
+            : (x.description?.isNotEmpty == true ? x.description! : 'Kart İşlemi');
+
+        final amountAsInt = (x.amount).round() * (isIncome ? 1 : -1);
+
+        return _Tx(
+          title: title,
+          sub: x.category?.isNotEmpty == true ? x.category! : 'Kart',
+          amount: amountAsInt,
+          date: dt,
+          kind: _Kind.card,
+          status: status,
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Error mapping transaction ${x.id}: $e');
+        }
+        return _Tx(
+          title: 'İşlem Hatası',
+          sub: 'Hata',
+          amount: 0,
+          date: DateTime.now(),
+          kind: _Kind.card,
+          status: _Status.fail,
+        );
+      }
+    }).toList();
+  }
+
+  List<_Tx> _buildAll(DbProvider dbp) {
+    final all = <_Tx>[];
+
+    try {
+      // 1) Transferler
+      if (dbp.transfers.isNotEmpty) {
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Adding ${dbp.transfers.length} transfers');
+        }
+        all.addAll(_mapTransfers(dbp.transfers));
+      }
+
+      // 2) Kart işlemleri
+      if (dbp.recentTransactions.isNotEmpty) {
+        if (kDebugMode) {
+          print('[Erenay][TXNS] Adding ${dbp.recentTransactions.length} card transactions');
+        }
+        all.addAll(_mapCardTx(dbp.recentTransactions));
+      }
+
+      // 3) Faturalar (şimdilik boş)
+
+      if (kDebugMode) {
+        print('[Erenay][TXNS] Total transactions: ${all.length}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[Erenay][TXNS] Error building transaction list: $e');
+      }
+    }
+
+    return all;
+  }
+
+  List<_Tx> _filtered(List<_Tx> all) {
     switch (_tab) {
-      case 1:
-        return _all.where((t) => t.kind == _Kind.bill).toList();
-      case 2:
-        return _all.where((t) => t.kind == _Kind.transfer).toList();
-      case 3:
-        return _all.where((t) => t.kind == _Kind.card).toList();
-      default:
-        return _all;
+      case 1: // Faturalar
+        return all.where((t) => t.kind == _Kind.bill).toList();
+      case 2: // Transfer
+        return all.where((t) => t.kind == _Kind.transfer).toList();
+      case 3: // Kart
+        return all.where((t) => t.kind == _Kind.card).toList();
+      default: // Tümü
+        return all;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final groups = _groupByMonth(_filtered);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -138,12 +268,90 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           _buildTabs(),
           const SizedBox(height: 8),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              itemCount: groups.length,
-              itemBuilder: (context, i) {
-                final g = groups[i];
-                return _MonthSection(title: g.label, items: g.items);
+            child: Consumer<DbProvider>(
+              builder: (context, dbp, child) {
+                if (_isLoading || dbp.loading) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.accent,
+                    ),
+                  );
+                }
+
+                if (dbp.error != null) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: AppColors.error,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Veriler yüklenirken hata oluştu',
+                          style: TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          dbp.error!,
+                          style: TextStyle(
+                            color: AppColors.textSub,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => _initializeData(),
+                          child: const Text('Tekrar Dene'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final all = _buildAll(dbp);
+                final filtered = _filtered(all);
+                
+                if (filtered.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          color: AppColors.textSub,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Henüz işlem bulunmuyor',
+                          style: TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final groups = _groupByMonth(filtered);
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  itemCount: groups.length,
+                  itemBuilder: (context, i) {
+                    final g = groups[i];
+                    return _MonthSection(title: g.label, items: g.items);
+                  },
+                );
               },
             ),
           ),
@@ -186,9 +394,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  // Yardımcılar
   List<_MonthGroup> _groupByMonth(List<_Tx> items) {
-    items.sort((a, b) => b.date.compareTo(a.date)); // yeni üstte
+    items.sort((a, b) => b.date.compareTo(a.date));
     final map = <String, List<_Tx>>{};
     for (final t in items) {
       final key = _monthLabel(t.date);
@@ -201,23 +408,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   String _monthLabel(DateTime d) {
     const months = [
-      'Ocak',
-      'Şubat',
-      'Mart',
-      'Nisan',
-      'Mayıs',
-      'Haziran',
-      'Temmuz',
-      'Ağustos',
-      'Eylül',
-      'Ekim',
-      'Kasım',
-      'Aralık'
+      'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+      'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
     ];
     return '${months[d.month - 1]}';
   }
 }
 
+// Widget sınıfları aynı kalıyor...
 class _MonthSection extends StatelessWidget {
   const _MonthSection({required this.title, required this.items});
   final String title;
@@ -249,7 +447,6 @@ class _MonthSection extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Başlık satırı
           Row(
             children: [
               Text(title,
@@ -262,7 +459,6 @@ class _MonthSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 2),
-          // Elemanlar
           ...items.map((t) {
             final isIncome = t.amount >= 0;
             final amountStr = (isIncome ? '+' : '-') +
@@ -388,7 +584,7 @@ extension on _Status {
 class _Tx {
   final String title;
   final String sub;
-  final int amount; // + gelir, - gider
+  final int amount;
   final DateTime date;
   final _Kind kind;
   final _Status status;
