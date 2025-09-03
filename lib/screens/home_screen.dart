@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart - Optimized version
+// lib/screens/home_screen.dart - Güncellenmiş tam sürüm
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +11,7 @@ import '../models/account.dart';
 import '../models/debit_card.dart';
 import '../models/credit_card.dart';
 import 'login_screen.dart';
+import 'cards_screen.dart';
 
 class AppColors {
   static const background = Color(0xFF0A1628);
@@ -52,6 +53,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DebitCard? _primaryDebitCard;
   CreditCard? _primaryCreditCard;
   List<Account> _allAccounts = [];
+  
+  // Selected card info from cards screen
+  Map<String, dynamic>? _selectedCardInfo;
 
   @override
   void initState() {
@@ -92,16 +96,72 @@ class _HomeScreenState extends State<HomeScreen> {
       // Load cards
       await dbp.loadCardsByCustomer(cNo);
 
-      // Select primary account
-      _selectPrimaryAccount();
-      
-      // Select primary cards
-      _selectPrimaryCards();
+      // Select primary items based on selected card info or defaults
+      if (_selectedCardInfo != null) {
+        _selectPrimaryItemsFromSelection();
+      } else {
+        _selectPrimaryAccount();
+        _selectPrimaryCards();
+      }
 
     } catch (e) {
       _error = e.toString();
     } finally {
       setState(() { _loading = false; });
+    }
+  }
+
+  void _selectPrimaryItemsFromSelection() {
+    if (_selectedCardInfo == null) return;
+    
+    final dbp = context.read<DbProvider>();
+    final type = _selectedCardInfo!['type'] as String;
+    final id = _selectedCardInfo!['id'] as String;
+
+    switch (type) {
+      case 'account':
+        // Find the selected account
+        _primaryAccount = _allAccounts.cast<Account?>().firstWhere(
+          (acc) => acc?.accountId == id,
+          orElse: () => null,
+        );
+        // Clear card selections when account is selected
+        _primaryDebitCard = null;
+        _primaryCreditCard = null;
+        break;
+        
+      case 'debit':
+        // Find the selected debit card
+        _primaryDebitCard = dbp.debitCards.cast<DebitCard?>().firstWhere(
+          (card) => card?.cardId == id,
+          orElse: () => null,
+        );
+        // Find linked account for debit card
+        if (_primaryDebitCard?.accountId != null) {
+          _primaryAccount = _allAccounts.cast<Account?>().firstWhere(
+            (acc) => acc?.accountId == _primaryDebitCard!.accountId,
+            orElse: () => null,
+          );
+        }
+        _primaryCreditCard = null;
+        break;
+        
+      case 'credit':
+        // Find the selected credit card
+        _primaryCreditCard = dbp.creditCards.cast<CreditCard?>().firstWhere(
+          (card) => card?.cardId == id,
+          orElse: () => null,
+        );
+        // For credit cards, we might not have a direct account link
+        // Use default account selection
+        _selectPrimaryAccount();
+        _primaryDebitCard = null;
+        break;
+    }
+
+    // If no primary account found, use default selection
+    if (_primaryAccount == null) {
+      _selectPrimaryAccount();
     }
   }
 
@@ -179,15 +239,56 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAccountCard() {
-    if (_primaryAccount == null) return _buildEmptyCard();
+    if (_primaryAccount == null && _primaryCreditCard == null) return _buildEmptyCard();
 
     final screenW = MediaQuery.of(context).size.width;
     final contentW = math.min(screenW - 32, 640.0);
     final cardH = contentW / 1.58;
     final scale = (screenW / 390).clamp(0.90, 1.10);
     
-    final statusColor = _getAccountStatusColor();
-    final balance = _primaryAccount!.balance;
+    // Determine what to display based on selection
+    String statusColor = 'success';
+    double balance = 0.0;
+    String cardBrand = 'BANK';
+    String cardType = 'Hesap';
+    String displayName = _customer?.fullName ?? 'Müşteri';
+    String? statusText;
+    String? ibanText;
+
+    if (_selectedCardInfo != null && _selectedCardInfo!['type'] == 'credit') {
+      // Credit card selected
+      if (_primaryCreditCard != null) {
+        balance = _selectedCardInfo!['availableLimit'] ?? 0.0;
+        cardBrand = _primaryCreditCard!.cardBrand ?? 'CREDIT';
+        cardType = 'Kredi Kartı';
+        
+        if (_primaryCreditCard!.isBlocked == true) {
+          statusColor = 'error';
+          statusText = 'BLOKLU';
+        } else if (_primaryCreditCard!.isActive != true) {
+          statusColor = 'warning';
+          statusText = 'PASIF';
+        }
+      }
+    } else {
+      // Account or debit card selected (or default)
+      if (_primaryAccount != null) {
+        balance = _primaryAccount!.balance;
+        statusColor = _getAccountStatusColor();
+        cardType = '${_primaryAccount!.type} ${_primaryAccount!.currency}';
+        ibanText = _primaryAccount!.iban;
+        statusText = _primaryAccount!.status;
+        
+        if (_primaryDebitCard != null) {
+          cardBrand = _primaryDebitCard!.cardBrand ?? 'BANK';
+          if (_primaryDebitCard!.isBlocked == true) {
+            statusColor = 'error';
+            statusText = 'BLOKLU';
+          }
+        }
+      }
+    }
+
     final formattedBalance = _formatTRY(balance);
 
     return Padding(
@@ -201,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: cardH,
             child: Stack(
               children: [
-                // Card background - color based on account status
+                // Card background - color based on status
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(22),
@@ -261,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _customer?.fullName ?? 'Müşteri',
+                                  displayName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -270,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     fontSize: 19 * scale,
                                   ),
                                 ),
-                                if (_primaryAccount!.status != null)
+                                if (statusText != null)
                                   Container(
                                     margin: const EdgeInsets.only(top: 4),
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -279,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      _primaryAccount!.status!,
+                                      statusText,
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 10 * scale,
@@ -303,9 +404,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       
                       const SizedBox(height: 8),
                       
-                      // Account type
+                      // Account/Card type
                       Text(
-                        '${_primaryAccount!.type} ${_primaryAccount!.currency}',
+                        cardType,
                         style: TextStyle(
                           color: Colors.white.withOpacity(.90),
                           fontWeight: FontWeight.w600,
@@ -315,10 +416,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       
                       const Spacer(),
                       
-                      // IBAN
-                      if (_primaryAccount!.iban != null) ...[
+                      // IBAN (only for accounts)
+                      if (ibanText != null) ...[
                         Text(
-                          _primaryAccount!.iban!,
+                          ibanText,
                           style: TextStyle(
                             color: Colors.white.withOpacity(.95),
                             fontWeight: FontWeight.w700,
@@ -348,7 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Row(
                             children: [
                               Text(
-                                _getCardBrand(),
+                                cardBrand,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
@@ -370,16 +471,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
-
-  String _getCardBrand() {
-    if (_primaryDebitCard?.cardBrand != null) {
-      return _primaryDebitCard!.cardBrand!;
-    }
-    if (_primaryCreditCard?.cardBrand != null) {
-      return _primaryCreditCard!.cardBrand!;
-    }
-    return 'BANK';
   }
 
   Widget _buildEmptyCard() {
@@ -613,12 +704,24 @@ class _HomeScreenState extends State<HomeScreen> {
     // Open cards page
     HapticFeedback.selectionClick();
     try {
-      await Navigator.pushNamed(context, '/cards');
-      // Refresh data when returning
-      await _loadUserData();
-    } catch (_) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CardsScreen(),
+        ),
+      );
+      
+      // Handle the returned card selection
+      if (result != null && result is Map<String, dynamic>) {
+        setState(() {
+          _selectedCardInfo = result;
+        });
+        // Reload data with the new selection
+        await _loadUserData();
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kartlar ekranı henüz eklenmedi.')),
+        SnackBar(content: Text('Hata: $e')),
       );
     }
   }
@@ -743,7 +846,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildLogoutButton() {
+
+
+Widget _buildLogoutButton() {
     return GestureDetector(
       onTap: () async {
         HapticFeedback.selectionClick();
@@ -992,4 +1097,5 @@ class _BottomWaveClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;}
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}

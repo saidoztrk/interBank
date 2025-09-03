@@ -1,4 +1,4 @@
-// lib/screens/cards_screen.dart - Dinamik sürüm
+// lib/screens/cards_screen.dart - Güncellenmiş sürüm
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -124,7 +124,7 @@ class _CardsScreenState extends State<CardsScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => Navigator.maybePop(context),
+            onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
           ),
           const SizedBox(width: 6),
