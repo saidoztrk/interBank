@@ -2,29 +2,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-// Erenay: local storage & session
 import 'services/session_manager.dart';
-
-// Erenay: DB API client + provider
 import 'services/api_db_manager.dart';
 import 'providers/db_provider.dart';
 
-// Ekranlar
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chat_screen.dart';
-import 'screens/cards_screen.dart'; // ✅ yeni import
+import 'screens/cards_screen.dart';
+import 'screens/transactions_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SessionManager.initialize();
 
-  // Erenay: DB API base URL – dart-define ile geliyor
   const dbBase = String.fromEnvironment('DB_BASE_URL');
   if (dbBase.isEmpty) {
-    // ignore: avoid_print
-    print('[Erenay][MAIN] Uyarı: DB_BASE_URL tanımlı değil. '
-          'flutter run --dart-define=DB_BASE_URL=... ile verin.');
+    print(
+        '[Erenay][MAIN] Uyarı: DB_BASE_URL tanımlı değil. flutter run --dart-define=DB_BASE_URL=... ile verin.');
   }
 
   final dbApi = ApiDbManager(dbBase);
@@ -42,7 +37,6 @@ class InterBankApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ignore: avoid_print
     print('[Erenay][MAIN] App build. SessionID=${SessionManager.sessionId}');
     return MaterialApp(
       title: 'InterBank',
@@ -56,9 +50,10 @@ class InterBankApp extends StatelessWidget {
       initialRoute: '/login',
       routes: {
         '/login': (_) => const BankStyleLoginScreen(),
-        '/home' : (_) => const HomeScreen(),
-        '/chat' : (_) => const ChatScreen(),
-        '/cards': (_) => const CardsScreen(), // ✅ yeni route
+        '/home': (_) => const HomeScreen(),
+        '/chat': (_) => const ChatScreen(),
+        '/cards': (_) => const CardsScreen(),
+        '/transactions': (_) => const TransactionsScreen(),
       },
     );
   }
