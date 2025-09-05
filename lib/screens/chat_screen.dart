@@ -1,4 +1,4 @@
-// lib/screens/chat_screen.dart — MAYDAY brand, QR akışları kaldırıldı, placeholder cevap filtresi + BG image
+// lib/screens/chat_screen.dart — MAYDAY brand, Responsive design, İyileştirilmiş karşılama mesajı
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -36,7 +36,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   final List<ChatMessage> _messages = [
     ChatMessage.bot(
-      '🏦 Merhaba! Ben $_brandName asistanınızım. Banking işlemlerinizde size nasıl yardımcı olabilirim?',
+      '👋 Merhaba! Ben MAYDAY, sizin kişisel bankacılık asistanınızım.\n\n'
+      '💳 Hesap bakiyelerinizi öğrenebilir\n'
+      '📊 İşlem geçmişinizi inceleyebilir\n'
+      '💸 Para transferi yapabilir\n'
+      '🔍 Bankacılık hizmetleri hakkında bilgi alabilirsiniz\n\n'
+      'Size nasıl yardımcı olabilirim?',
       badge: BotBadgeState.sekreter,
     ),
   ];
@@ -105,7 +110,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _messages.add(
             ChatMessage.bot(
-              '❌ MCP Agent şu an erişilemiyor.\n\n'
+              '⚠️ MCP Agent şu an erişilemiyor.\n\n'
               'Kontrol listesi:\n'
               '• MCP Agent (cloud): mcp-agent-api.azurewebsites.net',
               badge: BotBadgeState.noConnection,
@@ -116,19 +121,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (_serviceHealth.mcpAgentAvailable && !_announcedMcpUp) {
           _announcedMcpUp = true;
           setState(() {
-            _messages.add(
-              ChatMessage.bot(
-                'MCP Agent bağlantısı başarılı!',
-                badge: BotBadgeState.connection,
-              ),
-            );
+            print('MCP Agent bağlantısı başarılı, kullanıcı bilgilendiriliyor.');
+           
           });
         }
       }
 
       _scheduleScrollToBottom();
     } catch (e) {
-      debugPrint('❌ Service health check error: $e');
+      debugPrint('⚠️ Service health check error: $e');
     }
   }
 
@@ -324,15 +325,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  String _getServiceDisplayName(ServiceType service) => 'MCP Agent';
+  String _getServiceDisplayName(ServiceType service) => 'Bankacılık Asistanı';
 
   Color _getServiceStatusColor() {
     if (!_serviceHealth.anyServiceAvailable) return Colors.red;
     final up = _serviceHealth.mcpAgentAvailable;
     return up ? Colors.green : Colors.orange;
-  }
-
-  // ---- Oturum İşlemleri ----
+  }// ---- Oturum İşlemleri ----
   Future<void> _startNewSession() async {
     try {
       final newId = await ApiServiceManager.startNewSession();
@@ -451,6 +450,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  // ---- Responsive Helper ----
+  bool get _isLargeScreen => MediaQuery.of(context).size.width > 600;
+  bool get _isSmallScreen => MediaQuery.of(context).size.width < 400;
+
   // ---- Build ----
   @override
   Widget build(BuildContext context) {
@@ -482,48 +485,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Kaptan görünümlü küçük logo (asset)
-              const CircleAvatar(
-                radius: 10,
+              CircleAvatar(
+                radius: _isSmallScreen ? 8 : 10,
                 backgroundColor: Colors.transparent,
                 backgroundImage:
-                    AssetImage('lib/assets/images/captain/captain.png'),
+                    const AssetImage('lib/assets/images/captain/captain.png'),
               ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const Text(
-                    _brandName,
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
+              SizedBox(width: _isSmallScreen ? 6 : 8),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      _brandName,
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                        fontSize: _isSmallScreen ? 14 : 16,
+                      ),
                     ),
-                  ),
-                  Text(
-                    _getServiceDisplayName(_activeService),
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
+                    if (!_isSmallScreen)
+                      Text(
+                        _getServiceDisplayName(_activeService),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 10,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
           actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: _getServiceStatusColor(),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
+            // Servis durumu göstergesi kaldırıldı
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.grey),
               onPressed: _checkAllServicesHealth,
@@ -544,8 +540,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     break;
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
+              itemBuilder: (context) => [
+                const PopupMenuItem(
                   value: 'new_session',
                   child: Row(
                     children: [
@@ -555,7 +551,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'session_history',
                   child: Row(
                     children: [
@@ -565,7 +561,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'clear_history',
                   child: Row(
                     children: [
@@ -585,36 +581,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 onTap: () => FocusScope.of(context).unfocus(),
                 child: Stack(
                   children: [
-                    // === Arka plan görseli (sadece görüntü) ===
+                    // === Arka plan görseli (responsive) ===
                     Positioned.fill(
                       child: Image.asset(
                         _bgPath,
                         fit: BoxFit.cover,
                         alignment: Alignment.center,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(color: Colors.grey.shade100),
                       ),
                     ),
-                    // === İçerik ===
+                    // === İçerik (responsive) ===
                     SafeArea(
                       child: Column(
                         children: [
+                          // Servis durumu uyarı banner'ı (responsive)
                           if (!_serviceHealth.anyServiceAvailable)
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(12),
+                              padding: EdgeInsets.all(_isSmallScreen ? 8 : 12),
                               color: Colors.red.shade100,
                               child: Row(
                                 children: [
-                                  const Icon(Icons.error, color: Colors.red),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
+                                  Icon(
+                                    Icons.error,
+                                    color: Colors.red,
+                                    size: _isSmallScreen ? 18 : 24,
+                                  ),
+                                  SizedBox(width: _isSmallScreen ? 6 : 8),
+                                  Expanded(
                                     child: Text(
                                       'MCP Agent aktif değil.',
-                                      style: TextStyle(color: Colors.red),
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: _isSmallScreen ? 12 : 14,
+                                      ),
                                     ),
                                   ),
                                   TextButton(
                                     onPressed: _checkAllServicesHealth,
-                                    child: const Text('Tekrar Dene'),
+                                    child: Text(
+                                      'Tekrar Dene',
+                                      style: TextStyle(
+                                        fontSize: _isSmallScreen ? 12 : 14,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -622,55 +633,83 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           else if (!_serviceHealth.mcpAgentAvailable)
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(12),
+                              padding: EdgeInsets.all(_isSmallScreen ? 8 : 12),
                               color: Colors.orange.shade100,
                               child: Row(
                                 children: [
-                                  const Icon(Icons.warning,
-                                      color: Colors.orange),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
+                                  Icon(
+                                    Icons.warning,
+                                    color: Colors.orange,
+                                    size: _isSmallScreen ? 18 : 24,
+                                  ),
+                                  SizedBox(width: _isSmallScreen ? 6 : 8),
+                                  Expanded(
                                     child: Text(
                                       'MCP Agent erişilemiyor. Lütfen daha sonra deneyin.',
-                                      style: TextStyle(color: Colors.orange),
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: _isSmallScreen ? 12 : 14,
+                                      ),
                                     ),
                                   ),
                                   TextButton(
                                     onPressed: _checkAllServicesHealth,
-                                    child: const Text('Yenile'),
+                                    child: Text(
+                                      'Yenile',
+                                      style: TextStyle(
+                                        fontSize: _isSmallScreen ? 12 : 14,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
+                          // Chat mesajları listesi (responsive)
                           Expanded(
-                            child: ListView.builder(
-                              controller: _scrollCtrl,
-                              physics: const ClampingScrollPhysics(),
-                              padding: const EdgeInsets.only(bottom: 8),
-                              keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
-                              itemCount:
-                                  _messages.length + (_waitingReply ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                final typingItem =
-                                    _waitingReply && index == _messages.length;
-                                if (typingItem) {
-                                  return const Padding(
-                                    padding:
-                                        EdgeInsets.only(left: 18, bottom: 6),
-                                    child: _TypingIndicator(),
-                                  );
-                                }
-                                final msg = _messages[index];
-                                return ChatBubble(message: msg);
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return ListView.builder(
+                                  controller: _scrollCtrl,
+                                  physics: const ClampingScrollPhysics(),
+                                  padding: EdgeInsets.only(
+                                    bottom: _isSmallScreen ? 4 : 8,
+                                    left: _isSmallScreen ? 4 : 8,
+                                    right: _isSmallScreen ? 4 : 8,
+                                  ),
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  itemCount:
+                                      _messages.length + (_waitingReply ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    final typingItem = _waitingReply &&
+                                        index == _messages.length;
+                                    if (typingItem) {
+                                      return Padding(
+                                        padding: EdgeInsets.only(
+                                          left: _isSmallScreen ? 12 : 18,
+                                          bottom: _isSmallScreen ? 4 : 6,
+                                        ),
+                                        child: const _TypingIndicator(),
+                                      );
+                                    }
+                                    final msg = _messages[index];
+                                    return ChatBubble(message: msg);
+                                  },
+                                );
                               },
                             ),
                           ),
-                          MessageInput(
-                            enabled: !_waitingReply &&
-                                _serviceHealth.anyServiceAvailable &&
-                                _serviceHealth.mcpAgentAvailable,
-                            onSend: _sendUserMessage,
+                          // Mesaj girişi (responsive)
+                          Container(
+                            constraints: BoxConstraints(
+                              maxWidth: _isLargeScreen ? 800 : double.infinity,
+                            ),
+                            child: MessageInput(
+                              enabled: !_waitingReply &&
+                                  _serviceHealth.anyServiceAvailable &&
+                                  _serviceHealth.mcpAgentAvailable,
+                              onSend: _sendUserMessage,
+                            ),
                           ),
                         ],
                       ),
@@ -683,23 +722,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 }
 
-// ---- Typing indicator ----
+// ---- Typing indicator (responsive) ----
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    final isSmallScreen = MediaQuery.of(context).size.width < 400;
+    
+    return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
         CircleAvatar(
-          radius: 21,
+          radius: isSmallScreen ? 16 : 21,
           backgroundColor: Colors.transparent,
           backgroundImage:
-              AssetImage('lib/assets/images/captain/captain_writing.png'),
+              const AssetImage('lib/assets/images/captain/captain_writing.png'),
         ),
-        SizedBox(width: 10),
-        _TypingBubble(),
+        SizedBox(width: isSmallScreen ? 6 : 10),
+        const _TypingBubble(),
       ],
     );
   }
@@ -710,6 +751,8 @@ class _TypingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isSmallScreen = MediaQuery.of(context).size.width < 400;
+    
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -722,11 +765,17 @@ class _TypingBubble extends StatelessWidget {
           ),
         ],
       ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isSmallScreen ? 8 : 12,
+          vertical: isSmallScreen ? 5 : 7,
+        ),
         child: Text(
           'Agent çalışıyor...',
-          style: TextStyle(fontSize: 14, color: Colors.black87),
+          style: TextStyle(
+            fontSize: isSmallScreen ? 12 : 14,
+            color: Colors.black87,
+          ),
         ),
       ),
     );

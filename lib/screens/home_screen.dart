@@ -988,7 +988,11 @@ Widget _buildLogoutButton() {
                           ],
                         ),
                         padding: const EdgeInsets.all(14),
-                        child: Image.asset(kIconCaptain, fit: BoxFit.contain, filterQuality: FilterQuality.high),
+                        child: Image.asset( kIconCaptain,
+  width: 105,   // 🔹 görselin genişliği
+  height: 105,  // 🔹 görselin yüksekliği
+  fit: BoxFit.contain,
+  filterQuality: FilterQuality.high),
                       ),
                     ),
                     const SizedBox(height: 6),
