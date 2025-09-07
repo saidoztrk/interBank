@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'services/session_manager.dart';
 import 'services/api_db_manager.dart';
+import 'services/api_service_manager.dart';
 import 'providers/db_provider.dart';
 
 import 'screens/login_screen.dart';
@@ -19,7 +20,7 @@ void main() async {
   const dbBase = String.fromEnvironment('DB_BASE_URL');
   if (dbBase.isEmpty) {
     print(
-        '[Erenay][MAIN] Uyarı: DB_BASE_URL tanımlı değil. flutter run --dart-define=DB_BASE_URL=... ile verin.');
+        '[Erenay][MAIN] UyarÄ±: DB_BASE_URL tanÄ±mlÄ± deÄŸil. flutter run --dart-define=DB_BASE_URL=... ile verin.');
   }
 
   final dbApi = ApiDbManager(dbBase);
@@ -32,12 +33,80 @@ void main() async {
   );
 }
 
-class InterBankApp extends StatelessWidget {
+class InterBankApp extends StatefulWidget {
   const InterBankApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<InterBankApp> createState() => _InterBankAppState();
+}
+
+class _InterBankAppState extends State<InterBankApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
     print('[Erenay][MAIN] App build. SessionID=${SessionManager.sessionId}');
+
+    // İlk chat session'ı başlat
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeChatSession();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Uygulama kapanırken session sonlandır
+    _endChatSession();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.paused:
+        // Uygulama arkaplan durumunda session sonlandır
+        print('[Erenay][MAIN] App paused - ending chat session');
+        _endChatSession();
+        break;
+      case AppLifecycleState.detached:
+        // Uygulama kapatma durumunda session sonlandır
+        print('[Erenay][MAIN] App detached - ending chat session');
+        _endChatSession();
+        break;
+      case AppLifecycleState.resumed:
+        // Uygulama tekrar aktif olduğunda yeni session başlat
+        print('[Erenay][MAIN] App resumed - initializing new chat session');
+        _initializeChatSession();
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        // Geçici durumlar için özel işlem yapma
+        break;
+    }
+  }
+
+  void _initializeChatSession() {
+    ApiServiceManager.initializeSession().then((sessionId) {
+      print('[Erenay][MAIN] Chat session başlatıldı: $sessionId');
+    }).catchError((e) {
+      print('[Erenay][MAIN] Chat session başlatma hatası: $e');
+    });
+  }
+
+  void _endChatSession() {
+    ApiServiceManager.endSession().then((_) {
+      print('[Erenay][MAIN] Chat session sonlandırıldı');
+    }).catchError((e) {
+      print('[Erenay][MAIN] Chat session sonlandırma hatası: $e');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'InterBank',
       debugShowCheckedModeBanner: false,

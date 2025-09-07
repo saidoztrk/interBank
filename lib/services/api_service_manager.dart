@@ -15,7 +15,7 @@ class ApiServiceManager {
   static const String _mcpAgentUrl = 'https://mcp-agent-api.azurewebsites.net';
 
   // Timeouts
-  static const Duration _timeout = Duration(seconds: 35);
+  static const Duration _timeout = Duration(seconds: 50);
   static const Duration _healthTimeout = Duration(seconds: 5);
 
   // Session
@@ -31,6 +31,77 @@ class ApiServiceManager {
       _currentSessionId = sessionId;
   static void clearCurrentSessionReference() => _currentSessionId = null;
 
+  /// ---- Initialize session at app start ----
+  static Future<String> initializeSession() async {
+    try {
+      final newSessionId = _generateSessionId();
+      final url = Uri.parse('$_mcpAgentUrl/session/start');
+
+      final response = await http
+          .post(
+            url,
+            headers: const {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'session_id': newSessionId}),
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _currentSessionId = newSessionId;
+        print('[ApiServiceManager] Session initialized: $newSessionId');
+        return newSessionId;
+      } else {
+        print(
+            '[ApiServiceManager] Session init failed: ${response.statusCode}');
+        // Fallback to local session if server fails
+        _currentSessionId = newSessionId;
+        return newSessionId;
+      }
+    } catch (e) {
+      print('[ApiServiceManager] Session init error: $e');
+      // Fallback to local session
+      final fallbackId = _generateSessionId();
+      _currentSessionId = fallbackId;
+      return fallbackId;
+    }
+  }
+
+  /// ---- End session at app close ----
+  static Future<void> endSession() async {
+    if (_currentSessionId == null) {
+      print('[ApiServiceManager] No active session to end');
+      return;
+    }
+
+    try {
+      final url = Uri.parse('$_mcpAgentUrl/session/end');
+
+      final response = await http
+          .post(
+            url,
+            headers: const {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'session_id': _currentSessionId}),
+          )
+          .timeout(_healthTimeout);
+
+      if (response.statusCode == 200) {
+        print(
+            '[ApiServiceManager] Session ended successfully: $_currentSessionId');
+      } else {
+        print('[ApiServiceManager] Session end failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[ApiServiceManager] Session end error: $e');
+    } finally {
+      _currentSessionId = null;
+    }
+  }
+
   /// ---- Chat: single entry point ----
   static Future<UniversalChatResponse> sendMessage({
     required String message,
@@ -38,20 +109,28 @@ class ApiServiceManager {
     String? sessionId,
     ServiceType? serviceType, // kept for compatibility but ignored
   }) async {
-    return _sendToMcpAgent(message, customerNo);
+    // Use current session ID if not provided
+    final activeSessionId = sessionId ?? _currentSessionId;
+    if (activeSessionId == null) {
+      throw const ApiException('No active session. Please restart the app.');
+    }
+
+    return _sendToMcpAgent(message, customerNo, activeSessionId);
   }
 
   /// MCP Agent (CLOUD) /chat
-  /// BODY: { "customer_id": <int>, "message": "<string>" }
+  /// BODY: { "customer_id": <int>, "message": "<string>", "session_id": "<string>" }
   static Future<UniversalChatResponse> _sendToMcpAgent(
     String message,
     int customerNo,
+    String sessionId,
   ) async {
     try {
       final url = Uri.parse('$_mcpAgentUrl/chat');
       final body = <String, dynamic>{
         'customer_id': customerNo,
         'message': message,
+        'session_id': sessionId,
       };
 
       final resp = await http
@@ -85,7 +164,7 @@ class ApiServiceManager {
         return UniversalChatResponse(
           success: true,
           message: replyText,
-          sessionId: _currentSessionId ?? '',
+          sessionId: sessionId,
           messageId: mid,
           serviceType: ServiceType.mcpAgent,
           badgeState: _determineBadgeFromContent(replyText),
@@ -105,51 +184,39 @@ class ApiServiceManager {
     }
   }
 
-  /// Start new (local) session – backend optional
+  /// Start new session – creates a new session and replaces current one
   static Future<String> startNewSession({ServiceType? serviceType}) async {
-    final newId = _generateSessionId();
-
-    try {
-      await _startMcpAgentSession(newId);
-      _currentSessionId = newId;
-      return newId;
-    } catch (_) {
-      _currentSessionId = newId;
-      return newId;
+    // End current session first
+    if (_currentSessionId != null) {
+      await endSession();
     }
+
+    // Start new session
+    return await initializeSession();
   }
 
-  static Future<void> _startMcpAgentSession(String sessionId) async {
-    try {
-      final url = Uri.parse('$_mcpAgentUrl/session/new');
-      await http
-          .post(url,
-              headers: const {'Content-Type': 'application/json'},
-              body: jsonEncode({'session_id': sessionId}))
-          .timeout(_healthTimeout);
-    } catch (_) {}
-  }
-
-  /// Clear current session (backend + local)
+  /// Clear current session history (but keep session alive)
   static Future<void> clearCurrentSession({ServiceType? serviceType}) async {
     if (_currentSessionId == null) return;
 
     try {
-      await _clearMcpAgentSession(_currentSessionId!);
-    } catch (_) {
-    } finally {
-      _currentSessionId = null;
+      final url = Uri.parse('$_mcpAgentUrl/session/clear');
+      await http
+          .post(
+            url,
+            headers: const {
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+            body: jsonEncode({'session_id': _currentSessionId}),
+          )
+          .timeout(_healthTimeout);
+      print('[ApiServiceManager] Session history cleared: $_currentSessionId');
+    } catch (e) {
+      print('[ApiServiceManager] Session clear error: $e');
     }
   }
 
-  static Future<void> _clearMcpAgentSession(String sessionId) async {
-    try {
-      final url = Uri.parse('$_mcpAgentUrl/sessions/$sessionId/close');
-      await http.post(url).timeout(_healthTimeout);
-    } catch (_) {}
-  }
-
-  /// List sessions (if backend supports)
+  /// List sessions (if backend supports) - may be limited since sessions are temporary
   static Future<List<SessionInfo>> listSessions({
     required int userId,
     ServiceType? serviceType,

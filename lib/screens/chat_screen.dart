@@ -1,4 +1,4 @@
-// lib/screens/chat_screen.dart — MAYDAY brand, Responsive design, İyileştirilmiş karşılama mesajı
+// lib/screens/chat_screen.dart — Session bazlı sohbet geçmişi yönetimi
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -34,7 +34,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const _bgPath =
       'lib/assets/images/captain/chat/Chatbot-Background.jpeg';
 
-  final List<ChatMessage> _messages = [
+  // Her yeni session'da karşılama mesajı ile başla
+  List<ChatMessage> _messages = [
     ChatMessage.bot(
       '👋 Merhaba! Ben MAYDAY, sizin kişisel bankacılık asistanınızım.\n\n'
       '💳 Hesap bakiyelerinizi öğrenebilir\n'
@@ -73,9 +74,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    if (widget.initialSessionId != null) {
-      ApiServiceManager.setCurrentSessionId(widget.initialSessionId!);
-    }
+    // Session kontrolü ve başlatma
+    _ensureSessionActive();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleScrollToBottom();
@@ -94,6 +94,80 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollCtrl.dispose();
     _subscription.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        // Uygulama arkaplan/kapatma durumunda mesajları temizle
+        print('[ChatScreen] App lifecycle changed - clearing messages');
+        _clearLocalMessages();
+        break;
+      case AppLifecycleState.resumed:
+        // Uygulama tekrar aktif olduğunda session kontrolü yap
+        _ensureSessionActive();
+        _checkAllServicesHealth();
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        // Geçici durumlar için özel işlem yapma
+        break;
+    }
+  }
+
+  // Session'ın aktif olduğundan emin ol
+  void _ensureSessionActive() {
+    final currentSessionId = ApiServiceManager.getCurrentSessionId();
+    if (currentSessionId == null) {
+      // Session yoksa yeni bir tane başlat
+      ApiServiceManager.initializeSession().then((sessionId) {
+        print('[ChatScreen] New session initialized: $sessionId');
+        // Yeni session ile beraber mesajları temizle ve karşılama mesajı ekle
+        _resetMessagesForNewSession();
+      }).catchError((e) {
+        print('[ChatScreen] Session initialization error: $e');
+      });
+    }
+  }
+
+  // Lokal mesajları temizle (session kapandığında)
+  void _clearLocalMessages() {
+    setState(() {
+      _messages = [
+        ChatMessage.bot(
+          '👋 Merhaba! Ben MAYDAY, sizin kişisel bankacılık asistanınızım.\n\n'
+          '💳 Hesap bakiyelerinizi öğrenebilir\n'
+          '📊 İşlem geçmişinizi inceleyebilir\n'
+          '💸 Para transferi yapabilir\n'
+          '🔍 Bankacılık hizmetleri hakkında bilgi alabilirsiniz\n\n'
+          'Size nasıl yardımcı olabilirim?',
+          badge: BotBadgeState.sekreter,
+        ),
+      ];
+    });
+  }
+
+  // Yeni session için mesajları sıfırla
+  void _resetMessagesForNewSession() {
+    setState(() {
+      _messages = [
+        ChatMessage.bot(
+          '🔄 Yeni oturum başlatıldı.\n\n'
+          '👋 Ben MAYDAY, sizin kişisel bankacılık asistanınızım.\n\n'
+          '💳 Hesap bakiyelerinizi öğrenebilir\n'
+          '📊 İşlem geçmişinizi inceleyebilir\n'
+          '💸 Para transferi yapabilir\n'
+          '🔍 Bankacılık hizmetleri hakkında bilgi alabilirsiniz\n\n'
+          'Size nasıl yardımcı olabilirim?',
+          badge: BotBadgeState.connection,
+        ),
+      ];
+    });
+    _scheduleScrollToBottom();
   }
 
   // ---- Servis Sağlık Kontrolü (yalnız MCP) ----
@@ -121,8 +195,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (_serviceHealth.mcpAgentAvailable && !_announcedMcpUp) {
           _announcedMcpUp = true;
           setState(() {
-            print('MCP Agent bağlantısı başarılı, kullanıcı bilgilendiriliyor.');
-           
+            print(
+                'MCP Agent bağlantısı başarılı, kullanıcı bilgilendiriliyor.');
           });
         }
       }
@@ -259,6 +333,38 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // Session kontrolü
+    final sessionId = ApiServiceManager.getCurrentSessionId();
+    if (sessionId == null) {
+      setState(() {
+        _messages.add(ChatMessage.user(trimmed));
+        _messages.add(
+          ChatMessage.bot(
+            'Oturum bilgisi bulunamadı. Yeni oturum başlatılıyor...',
+            badge: BotBadgeState.connection,
+          ),
+        );
+      });
+      _scheduleScrollToBottom();
+
+      // Yeni session başlat
+      try {
+        await ApiServiceManager.initializeSession();
+        _resetMessagesForNewSession();
+      } catch (e) {
+        setState(() {
+          _messages.add(
+            ChatMessage.bot(
+              'Oturum başlatılamadı. Lütfen uygulamayı yeniden başlatın.',
+              badge: BotBadgeState.noConnection,
+            ),
+          );
+        });
+        _scheduleScrollToBottom();
+      }
+      return;
+    }
+
     // customerNo null kontrolü
     final custNo = SessionManager.customerNo;
     if (custNo == null) {
@@ -285,7 +391,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final response = await ApiServiceManager.sendMessage(
         message: trimmed,
         customerNo: custNo,
-        sessionId: ApiServiceManager.getCurrentSessionId(),
+        sessionId: sessionId,
       );
 
       if (!mounted) return;
@@ -331,18 +437,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!_serviceHealth.anyServiceAvailable) return Colors.red;
     final up = _serviceHealth.mcpAgentAvailable;
     return up ? Colors.green : Colors.orange;
-  }// ---- Oturum İşlemleri ----
+  }
+
+  // ---- Oturum İşlemleri ----
   Future<void> _startNewSession() async {
     try {
+      // Eski session'ı sonlandır ve yeni session başlat
       final newId = await ApiServiceManager.startNewSession();
-      ApiServiceManager.setCurrentSessionId(newId);
 
       setState(() {
         _messages.clear();
         _messages.add(
           ChatMessage.bot(
-            '🆕 Yeni sohbet oturumu başlatıldı. Nasıl yardımcı olabilirim?',
-            badge: BotBadgeState.sekreter,
+            '🆕 Yeni sohbet oturumu başlatıldı.\n\n'
+            '👋 Ben MAYDAY, sizin kişisel bankacılık asistanınızım. '
+            'Size nasıl yardımcı olabilirim?',
+            badge: BotBadgeState.connection,
           ),
         );
       });
@@ -362,6 +472,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _clearCurrentSession() async {
     try {
+      // Session geçmişini temizle (session'ı aktif bırak)
       await ApiServiceManager.clearCurrentSession();
 
       setState(() {
@@ -376,7 +487,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Geçerli oturum temizlendi')),
+          const SnackBar(content: Text('Sohbet geçmişi temizlendi')),
         );
       }
     } catch (e) {
@@ -396,7 +507,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (sessions.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kayıtlı oturum yok')),
+          const SnackBar(
+            content: Text(
+                'Aktif session bazlı çalışma nedeniyle geçmiş oturumlar mevcut değil'),
+          ),
         );
         return;
       }
@@ -678,8 +792,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   ),
                                   keyboardDismissBehavior:
                                       ScrollViewKeyboardDismissBehavior.onDrag,
-                                  itemCount:
-                                      _messages.length + (_waitingReply ? 1 : 0),
+                                  itemCount: _messages.length +
+                                      (_waitingReply ? 1 : 0),
                                   itemBuilder: (context, index) {
                                     final typingItem = _waitingReply &&
                                         index == _messages.length;
@@ -729,7 +843,7 @@ class _TypingIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSmallScreen = MediaQuery.of(context).size.width < 400;
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
@@ -752,7 +866,7 @@ class _TypingBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSmallScreen = MediaQuery.of(context).size.width < 400;
-    
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
