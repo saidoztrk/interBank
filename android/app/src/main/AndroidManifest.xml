@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.CAMERA" />  <!-- QR için eklendi -->
 
     <application
-        android:label="CaptainBank AI"
+        android:label="KAPTAN BANK"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config"

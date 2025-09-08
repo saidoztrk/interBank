@@ -17,22 +17,22 @@ import 'cards_screen.dart';
 
 class AppColors {
   static const background = Color(0xFF0A1628);
-  static const primary    = Color(0xFF1E3A8A);
-  static const primary2   = Color(0xFF3B82F6);
-  static const accent     = Color(0xFFFFD700);
-  static const textLight  = Color(0xFFE5E7EB);
-  static const textSub    = Color(0xFFD1D5DB);
-  static const cardBg     = Color(0xFF1F2937);
-  static const success    = Color(0xFF22C55E);
-  static const warning    = Color(0xFFF59E0B);
-  static const error      = Color(0xFFEF4444);
+  static const primary = Color(0xFF1E3A8A);
+  static const primary2 = Color(0xFF3B82F6);
+  static const accent = Color(0xFFFFD700);
+  static const textLight = Color(0xFFE5E7EB);
+  static const textSub = Color(0xFFD1D5DB);
+  static const cardBg = Color(0xFF1F2937);
+  static const success = Color(0xFF22C55E);
+  static const warning = Color(0xFFF59E0B);
+  static const error = Color(0xFFEF4444);
 }
 
 // Asset paths
-const String kIconHome    = 'lib/assets/images/captain/home/home.png';
-const String kIconApps    = 'lib/assets/images/captain/home/apps.png';
-const String kIconSend    = 'lib/assets/images/captain/home/send.png';
-const String kIconPay     = 'lib/assets/images/captain/home/pay.png';
+const String kIconHome = 'lib/assets/images/captain/home/home.png';
+const String kIconApps = 'lib/assets/images/captain/home/apps.png';
+const String kIconSend = 'lib/assets/images/captain/home/send.png';
+const String kIconPay = 'lib/assets/images/captain/home/pay.png';
 const String kIconCaptain = 'lib/assets/images/captain/captain.png';
 
 const double kNavHeight = 140.0;
@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   DebitCard? _primaryDebitCard;
   CreditCard? _primaryCreditCard;
   List<Account> _allAccounts = [];
-  
+
   // Selected card info from cards screen
   Map<String, dynamic>? _selectedCardInfo;
 
@@ -69,13 +69,22 @@ class _HomeScreenState extends State<HomeScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Precache navigation icons
-    for (final asset in [kIconHome, kIconApps, kIconSend, kIconPay, kIconCaptain]) {
+    for (final asset in [
+      kIconHome,
+      kIconApps,
+      kIconSend,
+      kIconPay,
+      kIconCaptain
+    ]) {
       precacheImage(AssetImage(asset), context);
     }
   }
 
   Future<void> _loadUserData() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final cNo = SessionManager.customerNo;
@@ -108,28 +117,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // ÖNEMLİ: İşlem geçmişini yükle
       await _loadTransactionHistory();
-
     } catch (e) {
       _error = e.toString();
     } finally {
-      setState(() { _loading = false; });
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
   // YENİ: İşlem geçmişi yükleme fonksiyonu
   Future<void> _loadTransactionHistory() async {
     final dbp = context.read<DbProvider>();
-    
+
     if (_allAccounts.isNotEmpty) {
       // Ana hesabı kullanarak transfer geçmişini yükle
       final Account primaryAcc = _primaryAccount ?? _allAccounts.first;
       final accountId = primaryAcc.accountId;
-      
+
       if (accountId.isNotEmpty) {
         try {
           // Transfer geçmişini yükle (son 10 kayıt yeterli, UI'da 3 tanesini göstereceğiz)
           await dbp.loadTransfersByAccount(accountId, limit: 10);
-          
+
           // Varsa kart işlemlerini de yükle
           if (dbp.selectedDebit != null || dbp.selectedCredit != null) {
             await dbp.loadRecentTransactionsForSelection(limit: 10);
@@ -144,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _selectPrimaryItemsFromSelection() {
     if (_selectedCardInfo == null) return;
-    
+
     final dbp = context.read<DbProvider>();
     final type = _selectedCardInfo!['type'] as String;
     final id = _selectedCardInfo!['id'] as String;
@@ -153,36 +163,36 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'account':
         // Find the selected account
         _primaryAccount = _allAccounts.cast<Account?>().firstWhere(
-          (acc) => acc?.accountId == id,
-          orElse: () => null,
-        );
+              (acc) => acc?.accountId == id,
+              orElse: () => null,
+            );
         // Clear card selections when account is selected
         _primaryDebitCard = null;
         _primaryCreditCard = null;
         break;
-        
+
       case 'debit':
         // Find the selected debit card
         _primaryDebitCard = dbp.debitCards.cast<DebitCard?>().firstWhere(
-          (card) => card?.cardId == id,
-          orElse: () => null,
-        );
+              (card) => card?.cardId == id,
+              orElse: () => null,
+            );
         // Find linked account for debit card
         if (_primaryDebitCard?.accountId != null) {
           _primaryAccount = _allAccounts.cast<Account?>().firstWhere(
-            (acc) => acc?.accountId == _primaryDebitCard!.accountId,
-            orElse: () => null,
-          );
+                (acc) => acc?.accountId == _primaryDebitCard!.accountId,
+                orElse: () => null,
+              );
         }
         _primaryCreditCard = null;
         break;
-        
+
       case 'credit':
         // Find the selected credit card
         _primaryCreditCard = dbp.creditCards.cast<CreditCard?>().firstWhere(
-          (card) => card?.cardId == id,
-          orElse: () => null,
-        );
+              (card) => card?.cardId == id,
+              orElse: () => null,
+            );
         // For credit cards, we might not have a direct account link
         // Use default account selection
         _selectPrimaryAccount();
@@ -199,48 +209,50 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectPrimaryAccount() {
     // First look for active, TRY, current accounts
     Account? primary = _allAccounts.cast<Account?>().firstWhere(
-      (acc) => acc != null && 
-               acc.currency.toUpperCase() == 'TRY' && 
-               acc.type.toLowerCase().contains('vadesiz') &&
-               (acc.status?.toLowerCase() != 'closed'),
-      orElse: () => null,
-    );
+          (acc) =>
+              acc != null &&
+              acc.currency.toUpperCase() == 'TRY' &&
+              acc.type.toLowerCase().contains('vadesiz') &&
+              (acc.status?.toLowerCase() != 'closed'),
+          orElse: () => null,
+        );
 
     // If not found, get first TRY account
     if (primary == null) {
       primary = _allAccounts.cast<Account?>().firstWhere(
-        (acc) => acc != null && acc.currency.toUpperCase() == 'TRY',
-        orElse: () => null,
-      );
+            (acc) => acc != null && acc.currency.toUpperCase() == 'TRY',
+            orElse: () => null,
+          );
     }
 
     // If still not found, get first account
     primary ??= _allAccounts.isNotEmpty ? _allAccounts.first : null;
-    
+
     _primaryAccount = primary;
   }
 
   void _selectPrimaryCards() {
     final dbp = context.read<DbProvider>();
-    
+
     // Select active debit card
     _primaryDebitCard = dbp.debitCards.cast<DebitCard?>().firstWhere(
-      (card) => card != null && (card.isActive == true),
-      orElse: () => dbp.debitCards.isNotEmpty ? dbp.debitCards.first : null,
-    );
+          (card) => card != null && (card.isActive == true),
+          orElse: () => dbp.debitCards.isNotEmpty ? dbp.debitCards.first : null,
+        );
 
     // Select active credit card
     _primaryCreditCard = dbp.creditCards.cast<CreditCard?>().firstWhere(
-      (card) => card != null && (card.isActive == true),
-      orElse: () => dbp.creditCards.isNotEmpty ? dbp.creditCards.first : null,
-    );
+          (card) => card != null && (card.isActive == true),
+          orElse: () =>
+              dbp.creditCards.isNotEmpty ? dbp.creditCards.first : null,
+        );
   }
 
   String _formatTRY(double value) {
     final parts = value.toStringAsFixed(2).split('.');
     String intPart = parts[0];
     final decPart = parts[1];
-    
+
     // Add thousand separators
     final buffer = StringBuffer();
     for (int i = 0; i < intPart.length; i++) {
@@ -262,21 +274,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'success': return AppColors.success;
-      case 'warning': return AppColors.warning;
-      case 'error': return AppColors.error;
-      default: return AppColors.textSub;
+      case 'success':
+        return AppColors.success;
+      case 'warning':
+        return AppColors.warning;
+      case 'error':
+        return AppColors.error;
+      default:
+        return AppColors.textSub;
     }
   }
 
   Widget _buildAccountCard() {
-    if (_primaryAccount == null && _primaryCreditCard == null) return _buildEmptyCard();
+    if (_primaryAccount == null && _primaryCreditCard == null)
+      return _buildEmptyCard();
 
     final screenW = MediaQuery.of(context).size.width;
     final contentW = math.min(screenW - 32, 640.0);
     final cardH = contentW / 1.58;
     final scale = (screenW / 390).clamp(0.90, 1.10);
-    
+
     // Determine what to display based on selection
     String statusColor = 'success';
     double balance = 0.0;
@@ -292,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
         balance = _selectedCardInfo!['availableLimit'] ?? 0.0;
         cardBrand = _primaryCreditCard!.cardBrand ?? 'CREDIT';
         cardType = 'Kredi Kartı';
-        
+
         if (_primaryCreditCard!.isBlocked == true) {
           statusColor = 'error';
           statusText = 'BLOKLU';
@@ -309,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
         cardType = '${_primaryAccount!.type} ${_primaryAccount!.currency}';
         ibanText = _primaryAccount!.iban;
         statusText = _primaryAccount!.status;
-        
+
         if (_primaryDebitCard != null) {
           cardBrand = _primaryDebitCard!.cardBrand ?? 'BANK';
           if (_primaryDebitCard!.isBlocked == true) {
@@ -338,20 +355,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(22),
                     gradient: LinearGradient(
-                      colors: statusColor == 'error' 
-                        ? [const Color(0xFF7F1D1D), const Color(0xFFDC2626)]
-                        : statusColor == 'warning'
-                        ? [const Color(0xFF92400E), const Color(0xFFF59E0B)]
-                        : [const Color(0xFF251E73), const Color(0xFF2AA4FF)],
-                      begin: Alignment.topLeft, 
+                      colors: statusColor == 'error'
+                          ? [const Color(0xFF7F1D1D), const Color(0xFFDC2626)]
+                          : statusColor == 'warning'
+                              ? [
+                                  const Color(0xFF92400E),
+                                  const Color(0xFFF59E0B)
+                                ]
+                              : [
+                                  const Color(0xFF251E73),
+                                  const Color(0xFF2AA4FF)
+                                ],
+                      begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     boxShadow: const [
-                      BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 8)),
+                      BoxShadow(
+                          color: Color(0x33000000),
+                          blurRadius: 24,
+                          offset: Offset(0, 8)),
                     ],
                   ),
                 ),
-                
+
                 // Decorative elements
                 Positioned(
                   left: -contentW * .15,
@@ -365,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                
+
                 Positioned(
                   right: contentW * .04,
                   top: cardH * .10,
@@ -378,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                
+
                 // Content
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
@@ -405,7 +431,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 if (statusText != null)
                                   Container(
                                     margin: const EdgeInsets.only(top: 4),
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(.2),
                                       borderRadius: BorderRadius.circular(8),
@@ -423,18 +450,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           GestureDetector(
-                            onTap: () => setState(() => _hideBalance = !_hideBalance),
+                            onTap: () =>
+                                setState(() => _hideBalance = !_hideBalance),
                             child: Icon(
-                              _hideBalance ? Icons.visibility_off : Icons.visibility,
+                              _hideBalance
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
                               color: Colors.white.withOpacity(.90),
                               size: 20 * scale,
                             ),
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 8),
-                      
+
                       // Account/Card type
                       Text(
                         cardType,
@@ -444,9 +474,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 12.5 * scale,
                         ),
                       ),
-                      
+
                       const Spacer(),
-                      
+
                       // IBAN (only for accounts)
                       if (ibanText != null) ...[
                         Text(
@@ -460,7 +490,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                       ],
-                      
+
                       // Balance and action button
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -488,7 +518,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              Icon(Icons.chevron_right, color: Colors.white.withOpacity(.95)),
+                              Icon(Icons.chevron_right,
+                                  color: Colors.white.withOpacity(.95)),
                             ],
                           ),
                         ],
@@ -502,7 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }// home_screen.dart - İKİNCİ KISIM (devamı)
+  } // home_screen.dart - İKİNCİ KISIM (devamı)
 
   Widget _buildEmptyCard() {
     return const Center(
@@ -548,10 +579,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildAccountItem(Account account) {
     final isBlocked = account.isBlocked == 1;
     final isClosed = account.status?.toLowerCase() == 'closed';
-    
+
     Color statusColor = AppColors.success;
-    if (isBlocked || isClosed) statusColor = AppColors.error;
-    else if (account.status?.toLowerCase() == 'frozen') statusColor = AppColors.warning;
+    if (isBlocked || isClosed)
+      statusColor = AppColors.error;
+    else if (account.status?.toLowerCase() == 'frozen')
+      statusColor = AppColors.warning;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -563,15 +596,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: statusColor.withOpacity(.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              account.type.toLowerCase().contains('kredi') 
-                ? Icons.credit_card 
-                : Icons.account_balance_wallet,
+              account.type.toLowerCase().contains('kredi')
+                  ? Icons.credit_card
+                  : Icons.account_balance_wallet,
               color: statusColor,
               size: 20,
             ),
@@ -601,7 +635,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (account.status != null) ...[
                   const SizedBox(height: 2),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(.2),
                       borderRadius: BorderRadius.circular(4),
@@ -637,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context, dbp, child) {
         // API'den gelen verileri birleştir
         final allTransactions = _buildDynamicTransactionList(dbp);
-        
+
         void goAll() {
           try {
             Navigator.pushNamed(context, '/transactions');
@@ -657,8 +692,14 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.accent.withOpacity(.20), width: 1),
-                boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
+                border: Border.all(
+                    color: AppColors.accent.withOpacity(.20), width: 1),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 12,
+                      offset: Offset(0, 6))
+                ],
               ),
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
               child: Column(
@@ -668,29 +709,38 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       const Expanded(
                         child: Text('Son İşlemler',
-                            style: TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w800, fontSize: 16)),
+                            style: TextStyle(
+                                color: AppColors.textLight,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16)),
                       ),
                       TextButton(
                         onPressed: goAll,
-                        child: const Text('Tümünü gör', style: TextStyle(color: AppColors.textSub, fontWeight: FontWeight.w700)),
+                        child: const Text('Tümünü gör',
+                            style: TextStyle(
+                                color: AppColors.textSub,
+                                fontWeight: FontWeight.w700)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  
+
                   // Dinamik işlem listesi - SADECE 3 TANE
                   if (allTransactions.isEmpty) ...[
                     const SizedBox(height: 40),
                     const Center(
                       child: Text(
                         'Henüz işlem bulunmuyor',
-                        style: TextStyle(color: AppColors.textSub, fontSize: 14),
+                        style:
+                            TextStyle(color: AppColors.textSub, fontSize: 14),
                       ),
                     ),
                     const SizedBox(height: 40),
                   ] else ...[
                     // Burada _buildDynamicTransactionItem kullanıyoruz, _buildTransactionItem değil
-                    ...allTransactions.take(3).map((txItem) => _buildDynamicTransactionItem(txItem)),
+                    ...allTransactions
+                        .take(3)
+                        .map((txItem) => _buildDynamicTransactionItem(txItem)),
                   ],
                 ],
               ),
@@ -710,27 +760,30 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final transfer in dbp.transfers) {
         final isIncome = transfer.direction == TransferDirection.IN;
         final icon = isIncome ? Icons.call_received : Icons.call_made;
-        final iconBg = isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF5B8A);
-        
+        final iconBg =
+            isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF5B8A);
+
         String title = transfer.title;
         if (title.isEmpty || title == transfer.counterparty) {
           title = isIncome ? 'Gelen Havale' : 'Giden Havale';
         }
-        
+
         String sub = 'Havale';
-        if (transfer.counterparty.isNotEmpty && transfer.counterparty != title) {
+        if (transfer.counterparty.isNotEmpty &&
+            transfer.counterparty != title) {
           sub = 'Hesap: ${transfer.counterparty}';
         }
-        
+
         // Status mapping
         String status = 'Başarılı';
         final statusLower = transfer.status.toLowerCase();
         if (statusLower.contains('pend') || statusLower.contains('process')) {
           status = 'Bekliyor';
-        } else if (statusLower.contains('fail') || statusLower.contains('reject')) {
+        } else if (statusLower.contains('fail') ||
+            statusLower.contains('reject')) {
           status = 'Başarısız';
         }
-        
+
         allTransactions.add(_TxItem(
           icon: icon,
           iconBg: iconBg,
@@ -746,19 +799,20 @@ class _HomeScreenState extends State<HomeScreen> {
         final isIncome = txn.isIncome;
         final icon = Icons.credit_card;
         final iconBg = const Color(0xFF3B82F6);
-        
+
         String title = txn.merchantName ?? txn.description ?? 'Kart İşlemi';
         String sub = txn.category ?? 'Kart';
-        
+
         // Status mapping
         String status = 'Başarılı';
         final statusText = (txn.status ?? '').toLowerCase();
         if (statusText.contains('pend')) {
           status = 'Bekliyor';
-        } else if (statusText.contains('fail') || statusText.contains('reject')) {
+        } else if (statusText.contains('fail') ||
+            statusText.contains('reject')) {
           status = 'Başarısız';
         }
-        
+
         allTransactions.add(_TxItem(
           icon: icon,
           iconBg: iconBg,
@@ -771,7 +825,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // 3. Tarihe göre sırala (en yeni önce)
       allTransactions.sort((a, b) => b.date.compareTo(a.date));
-      
     } catch (e) {
       print('[HomeScreen] İşlem listesi oluşturulurken hata: $e');
     }
@@ -784,23 +837,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTransactionItem(_TxItem transaction) {
     final isIncome = transaction.amount >= 0;
-    final amountStr = (isIncome ? '+' : '-') + _formatTRY(transaction.amount.abs().toDouble()).replaceAll(' ₺', '');
-    
+    final amountStr = (isIncome ? '+' : '-') +
+        _formatTRY(transaction.amount.abs().toDouble()).replaceAll(' ₺', '');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
           Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(color: transaction.iconBg, borderRadius: BorderRadius.circular(12)),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: transaction.iconBg,
+                borderRadius: BorderRadius.circular(12)),
             child: Icon(transaction.icon, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [// home_screen.dart - ÜÇÜNCÜ KISIM (devamı - son)
-
+              children: [
+                // home_screen.dart - ÜÇÜNCÜ KISIM (devamı - son)
               ],
             ),
           ),
@@ -808,7 +865,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             '$amountStr ₺',
             style: TextStyle(
-              color: isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
+              color:
+                  isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -820,15 +878,18 @@ class _HomeScreenState extends State<HomeScreen> {
   // YENİ: Dinamik işlem item'ı oluştur
   Widget _buildDynamicTransactionItem(_TxItem t) {
     final isIncome = t.amount >= 0;
-    final amountStr = (isIncome ? '+' : '-') + _formatTRY(t.amount.abs().toDouble()).replaceAll(' ₺', '');
-    
+    final amountStr = (isIncome ? '+' : '-') +
+        _formatTRY(t.amount.abs().toDouble()).replaceAll(' ₺', '');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
           Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(color: t.iconBg, borderRadius: BorderRadius.circular(12)),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: t.iconBg, borderRadius: BorderRadius.circular(12)),
             child: Icon(t.icon, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
@@ -839,12 +900,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(t.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w700)),
+                    style: const TextStyle(
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Text(t.sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textSub, fontSize: 12.5)),
+                    style: const TextStyle(
+                        color: AppColors.textSub, fontSize: 12.5)),
               ],
             ),
           ),
@@ -852,7 +916,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             '$amountStr ₺',
             style: TextStyle(
-              color: isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
+              color:
+                  isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -871,7 +936,7 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context) => const CardsScreen(),
         ),
       );
-      
+
       // Handle the returned card selection
       if (result != null && result is Map<String, dynamic>) {
         setState(() {
@@ -905,7 +970,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? _buildErrorView()
                     : SingleChildScrollView(
                         padding: EdgeInsets.only(
-                          bottom: kNavHeight + MediaQuery.of(context).padding.bottom + 24,
+                          bottom: kNavHeight +
+                              MediaQuery.of(context).padding.bottom +
+                              24,
                         ),
                         child: Column(
                           children: [
@@ -935,7 +1002,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 16),
           const Text(
             'Bir hata oluştu',
-            style: TextStyle(color: AppColors.textLight, fontSize: 18, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: AppColors.textLight,
+                fontSize: 18,
+                fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -968,15 +1038,35 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Stack(
           children: [
             // Decorative elements
-            Positioned(top: 36, left: -10, child: _decorativeBubble(70, AppColors.accent.withOpacity(.15))),
-            Positioned(top: 20, right: -6, child: _decorativeBubble(46, Colors.white.withOpacity(.20))),
-            Positioned(bottom: 18, right: 40, child: _decorativeBubble(28, AppColors.accent.withOpacity(.12))),
-            Positioned(top: 80, right: 20, child: Icon(Icons.anchor, size: 24, color: Colors.white.withOpacity(0.3))),
-            Positioned(bottom: 40, left: 30, child: Icon(Icons.sailing, size: 20, color: AppColors.accent.withOpacity(0.4))),
-            
+            Positioned(
+                top: 36,
+                left: -10,
+                child:
+                    _decorativeBubble(70, AppColors.accent.withOpacity(.15))),
+            Positioned(
+                top: 20,
+                right: -6,
+                child: _decorativeBubble(46, Colors.white.withOpacity(.20))),
+            Positioned(
+                bottom: 18,
+                right: 40,
+                child:
+                    _decorativeBubble(28, AppColors.accent.withOpacity(.12))),
+            Positioned(
+                top: 80,
+                right: 20,
+                child: Icon(Icons.anchor,
+                    size: 24, color: Colors.white.withOpacity(0.3))),
+            Positioned(
+                bottom: 40,
+                left: 30,
+                child: Icon(Icons.sailing,
+                    size: 20, color: AppColors.accent.withOpacity(0.4))),
+
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -1021,7 +1111,10 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFFE11D48),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))],
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))
+          ],
         ),
         child: const Row(
           children: [
@@ -1061,7 +1154,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         Container(
-          width: 48, height: 48,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
             color: color.withOpacity(.12),
             borderRadius: BorderRadius.circular(14),
@@ -1104,18 +1198,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     topRight: Radius.circular(24),
                   ),
                   boxShadow: [
-                    BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, -2)),
+                    BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 16,
+                        offset: Offset(0, -2)),
                   ],
                 ),
                 padding: const EdgeInsets.fromLTRB(12, 0, 28, 0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _navIcon(kIconHome, 'Ana Sayfa', _tab == 0, () => setState(() => _tab = 0)),
-                    _navIcon(kIconApps, 'Başvurular', _tab == 1, () => setState(() => _tab = 1)),
+                    _navIcon(kIconHome, 'Ana Sayfa', _tab == 0,
+                        () => setState(() => _tab = 0)),
+                    _navIcon(kIconApps, 'Başvurular', _tab == 1,
+                        () => setState(() => _tab = 1)),
                     const SizedBox(width: 88),
-                    _navIcon(kIconSend, 'Para Gönder', _tab == 2, () => setState(() => _tab = 2)),
-                    _navIcon(kIconPay, 'Ödeme Yap', _tab == 3, () => setState(() => _tab = 3)),
+                    _navIcon(kIconSend, 'Para Gönder', _tab == 2,
+                        () => setState(() => _tab = 2)),
+                    _navIcon(kIconPay, 'Ödeme Yap', _tab == 3,
+                        () => setState(() => _tab = 3)),
                   ],
                 ),
               ),
@@ -1134,30 +1235,43 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                       behavior: HitTestBehavior.opaque,
                       child: Container(
-                        width: 86, height: 86,
+                        width: 86,
+                        height: 86,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: LinearGradient(
                             colors: [AppColors.primary, AppColors.primary2],
-                            begin: Alignment.topLeft, end: Alignment.bottomRight,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
                           boxShadow: [
-                            BoxShadow(color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 8)),
-                            BoxShadow(color: Color(0x553B82F6), blurRadius: 30, spreadRadius: -8, offset: Offset(0, 10)),
+                            BoxShadow(
+                                color: Color(0x33000000),
+                                blurRadius: 18,
+                                offset: Offset(0, 8)),
+                            BoxShadow(
+                                color: Color(0x553B82F6),
+                                blurRadius: 30,
+                                spreadRadius: -8,
+                                offset: Offset(0, 10)),
                           ],
                         ),
                         padding: const EdgeInsets.all(14),
-                        child: Image.asset( kIconCaptain,
-  width: 105,   
-  height: 105,  
-  fit: BoxFit.contain,
-  filterQuality: FilterQuality.high),
+                        child: Image.asset(kIconCaptain,
+                            width: 105,
+                            height: 105,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high),
                       ),
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Kaptan',
-                      style: TextStyle(color: AppColors.primary, fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: .2),
+                      'MAYDAY',
+                      style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .2),
                     ),
                   ],
                 ),
@@ -1169,27 +1283,45 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _navIcon(String asset, String label, bool selected, VoidCallback onTap) {
+  Widget _navIcon(
+      String asset, String label, bool selected, VoidCallback onTap) {
     final BoxDecoration bg = selected
         ? const BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
               colors: [AppColors.primary, AppColors.primary2],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
             boxShadow: [
-              BoxShadow(color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 8)),
-              BoxShadow(color: Color(0x553B82F6), blurRadius: 28, spreadRadius: -8, offset: Offset(0, 10)),
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8)),
+              BoxShadow(
+                  color: Color(0x553B82F6),
+                  blurRadius: 28,
+                  spreadRadius: -8,
+                  offset: Offset(0, 10)),
             ],
           )
         : BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white,
             border: Border.all(color: const Color(0x11000000)),
-            boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 14, offset: Offset(0, 6))],
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 14,
+                  offset: Offset(0, 6))
+            ],
           );
 
-    final Widget iconImg = Image.asset(asset, width: 24, height: 24, fit: BoxFit.contain, filterQuality: FilterQuality.high);
+    final Widget iconImg = Image.asset(asset,
+        width: 24,
+        height: 24,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high);
     final Color labelColor = selected ? AppColors.primary : Colors.grey;
 
     return GestureDetector(
@@ -1214,15 +1346,20 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(label,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: labelColor)),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: labelColor)),
           ],
         ),
       ),
     );
   }
 
-  Widget _decorativeBubble(double size, Color color) =>
-      Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
+  Widget _decorativeBubble(double size, Color color) => Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle));
 }
 
 // YENİ: Güncellenmiş Transaction Item sınıfı
@@ -1233,7 +1370,7 @@ class _TxItem {
   final String sub;
   final int amount; // + income, - expense
   final DateTime date;
-  
+
   _TxItem({
     required this.icon,
     required this.iconBg,
