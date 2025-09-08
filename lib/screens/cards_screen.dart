@@ -33,7 +33,7 @@ class _CardsScreenState extends State<CardsScreen> {
     _selectedId = widget.initialSelectedId;
   }
 
-  String _formatTRY(double value) {
+  String _formatCurrency(double value, String currency) {
     final parts = value.toStringAsFixed(2).split('.');
     String intPart = parts[0];
     final decPart = parts[1];
@@ -46,7 +46,25 @@ class _CardsScreenState extends State<CardsScreen> {
         buffer.write('.');
       }
     }
-    return '${buffer.toString()},$decPart ₺';
+    
+    // Para birimi simgesini belirle
+    String currencySymbol;
+    switch (currency.toUpperCase()) {
+      case 'USD':
+        currencySymbol = '\$';
+        break;
+      case 'EUR':
+        currencySymbol = '€';
+        break;
+      case 'TRY':
+      case 'TL':
+        currencySymbol = '₺';
+        break;
+      default:
+        currencySymbol = currency.toUpperCase(); // Bilinmeyen para birimleri için kısaltma kullan
+    }
+    
+    return '${buffer.toString()},$decPart $currencySymbol';
   }
 
   String _maskCardNumber(String cardNumber) {
@@ -116,9 +134,7 @@ class _CardsScreenState extends State<CardsScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildHeader(BuildContext context) {
+  }Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -320,7 +336,7 @@ class _CardsScreenState extends State<CardsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _formatTRY(account.balance),
+                        _formatCurrency(account.balance, account.currency),
                         style: TextStyle(
                           color: account.balance >= 0 ? Colors.green : Colors.red,
                           fontWeight: FontWeight.w800,
@@ -353,9 +369,7 @@ class _CardsScreenState extends State<CardsScreen> {
         );
       },
     );
-  }
-
-  Widget _buildCardsTab() {
+  }Widget _buildCardsTab() {
     final dbProvider = context.watch<DbProvider>();
     final debitCards = dbProvider.debitCards;
     final creditCards = dbProvider.creditCards;
@@ -582,10 +596,10 @@ class _CardsScreenState extends State<CardsScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Bakiye
+                      // Bakiye - Para birimi ile birlikte
                       if (linkedAccount != null)
                         Text(
-                          _formatTRY(linkedAccount.balance),
+                          _formatCurrency(linkedAccount.balance, linkedAccount.currency),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
@@ -622,9 +636,7 @@ class _CardsScreenState extends State<CardsScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildCreditCardWidget(CreditCard card) {
+  }Widget _buildCreditCardWidget(CreditCard card) {
     final w = MediaQuery.of(context).size.width - 32;
     final h = w / 1.58;
     final selected = _selectedId == card.cardId;
@@ -779,7 +791,7 @@ class _CardsScreenState extends State<CardsScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Kullanılabilir limit
+                      // Kullanılabilir limit - Para birimi ile birlikte (genelde TL)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -792,7 +804,7 @@ class _CardsScreenState extends State<CardsScreen> {
                               ),
                             ),
                             Text(
-                              _formatTRY(card.availableLimit!),
+                              _formatCurrency(card.availableLimit!, 'TRY'), // Kredi kartları genelde TL
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
