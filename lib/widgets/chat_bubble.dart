@@ -51,13 +51,18 @@ class ChatBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Kaptan rozeti
+          // Kaptan rozeti - KARE şeklinde
           Padding(
             padding: const EdgeInsets.only(right: 10, top: 1),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: ChatBotBadge(
-                state: message.badgeState, // ChatMessage.badgeState bekleniyor
+              borderRadius: BorderRadius.circular(8), // Dairesel (999) yerine kare-ish (8)
+              child: Container(
+                width: 42, // Eşit boyutlar
+                height: 42, // Eşit boyutlar
+                child: ChatBotBadge(
+                  state: message.badgeState, // ChatMessage.badgeState bekleniyor
+                  size: 42, // Badge size'ını container size ile aynı yap
+                ),
               ),
             ),
           ),
