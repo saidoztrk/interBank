@@ -108,7 +108,7 @@ class _InterBankAppState extends State<InterBankApp>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'InterBank',
+      title: 'KAPTAN BANK',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
