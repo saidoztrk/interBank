@@ -1,4 +1,4 @@
-// lib/screens/transactions_screen.dart - Responsive Design (Part 1)
+// lib/screens/transactions_screen.dart - GÜNCELLENMİŞ Responsive Design
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
@@ -29,7 +29,7 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  int _tab = 0; // 0: Tümü, 1: Faturalar, 2: Transfer, 3: Kart
+  // SADECE TÜMÜ SEKMESİ KALACAK - diğer sekmeleri kaldırdık
   bool _initialized = false;
   bool _isLoading = false;
 
@@ -71,10 +71,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           print('[Erenay][TXNS] Loading transfers for account: $accountId');
         }
         
+        // Transfer geçmişini yükle
         await dbp.loadTransfersByAccount(accountId);
+        
+        // Kart işlemlerini de yükle (eğer seçili kart varsa)
+        if (dbp.selectedDebit != null || dbp.selectedCredit != null) {
+          await dbp.loadRecentTransactionsForSelection(limit: 50);
+        }
         
         if (kDebugMode) {
           print('[Erenay][TXNS] Loaded ${dbp.transfers.length} transfers');
+          print('[Erenay][TXNS] Loaded ${dbp.recentTransactions.length} card transactions');
         }
       } else {
         if (kDebugMode) {
@@ -83,11 +90,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[Erenay][TXNS] Error loading transfers: $e');
+        print('[Erenay][TXNS] Error loading transactions: $e');
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transfer geçmişi yüklenirken hata: $e')),
+          SnackBar(content: Text('İşlem geçmişi yüklenirken hata: $e')),
         );
       }
     } finally {
@@ -207,7 +214,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     }).toList();
   }
 
-  List<_Tx> _buildAll(DbProvider dbp) {
+  // FATURALAR İÇİN PLACEHOLDER - ŞUANDA BOŞ OLAN BİR FONKSİYON
+  List<_Tx> _mapBills() {
+    // Gelecekte fatura API'si entegre edildiğinde burada doldurulacak
+    return [];
+  }
+
+  List<_Tx> _buildAllTransactions(DbProvider dbp) {
     final all = <_Tx>[];
 
     try {
@@ -228,6 +241,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       }
 
       // 3) Faturalar (şimdilik boş)
+      all.addAll(_mapBills());
+
+      // 4) Tarihe göre sırala (en yeni önce)
+      all.sort((a, b) => b.date.compareTo(a.date));
 
       if (kDebugMode) {
         print('[Erenay][TXNS] Total transactions: ${all.length}');
@@ -241,18 +258,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     return all;
   }
 
-  List<_Tx> _filtered(List<_Tx> all) {
-    switch (_tab) {
-      case 1: // Faturalar
-        return all.where((t) => t.kind == _Kind.bill).toList();
-      case 2: // Transfer
-        return all.where((t) => t.kind == _Kind.transfer).toList();
-      case 3: // Kart
-        return all.where((t) => t.kind == _Kind.card).toList();
-      default: // Tümü
-        return all;
-    }
-  }@override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -273,7 +279,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       body: Column(
         children: [
           SizedBox(height: _isSmallScreen ? 4 : 8),
-          _buildTabs(),
+          
+          // TAB SİSTEMİNİ KALDIRDIK - Sadece "Tümü" içeriği gösterilecek
+          // _buildTabs(), // KALDIRILDI
+          
           SizedBox(height: _isSmallScreen ? 4 : 8),
           Expanded(
             child: Consumer<DbProvider>(
@@ -335,10 +344,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   );
                 }
 
-                final all = _buildAll(dbp);
-                final filtered = _filtered(all);
+                // TÜM İŞLEMLERİ BİRLEŞTİR - FİLTRELEME YOK
+                final allTransactions = _buildAllTransactions(dbp);
                 
-                if (filtered.isEmpty) {
+                if (allTransactions.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -362,7 +371,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   );
                 }
 
-                final groups = _groupByMonth(filtered);
+                final groups = _groupByMonth(allTransactions);
                 return ListView.builder(
                   padding: EdgeInsets.fromLTRB(
                     _isSmallScreen ? 12 : 16,
@@ -384,45 +393,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  Widget _buildTabs() {
-    final tabs = ['Tümü', 'Faturalar', 'Transfer', 'Kart'];
-    return SizedBox(
-      height: _isSmallScreen ? 36 : 42,
-      child: ListView.separated(
-        padding: EdgeInsets.symmetric(horizontal: _isSmallScreen ? 12 : 16),
-        scrollDirection: Axis.horizontal,
-        itemBuilder: (_, i) {
-          final selected = _tab == i;
-          return GestureDetector(
-            onTap: () => setState(() => _tab = i),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              padding: EdgeInsets.symmetric(
-                horizontal: _isSmallScreen ? 10 : 14,
-                vertical: _isSmallScreen ? 6 : 8,
-              ),
-              decoration: BoxDecoration(
-                color: selected ? Colors.white : AppColors.cardBg,
-                borderRadius: BorderRadius.circular(_isSmallScreen ? 12 : 14),
-              ),
-              child: Center(
-                child: Text(
-                  tabs[i],
-                  style: TextStyle(
-                    color: selected ? AppColors.primary : AppColors.textLight,
-                    fontWeight: FontWeight.w800,
-                    fontSize: _isSmallScreen ? 12 : 14,
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-        separatorBuilder: (_, __) => SizedBox(width: _isSmallScreen ? 6 : 10),
-        itemCount: tabs.length,
-      ),
-    );
-  }
+  // TAB SİSTEMİ KALDIRILDI - artık gerek yok
+  // Widget _buildTabs() { ... } // KALDIRILDI// transactions_screen.dart - İKİNCİ KISIM (devamı)
 
   List<_MonthGroup> _groupByMonth(List<_Tx> items) {
     items.sort((a, b) => b.date.compareTo(a.date));
@@ -445,7 +417,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 }
 
-// Responsive Widget sınıfları - TAM YENİLENDİ
+// Responsive Widget sınıfları - GÜNCELLENMIŞ
 class _MonthSection extends StatelessWidget {
   const _MonthSection({required this.title, required this.items});
   final String title;
@@ -635,6 +607,7 @@ class _MonthSection extends StatelessWidget {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
+// İşlem türleri - GÜNCELLENMIŞ (faturalar eklendi)
 enum _Kind { bill, transfer, card }
 
 extension on _Kind {
@@ -655,6 +628,7 @@ extension on _Status {
       };
 }
 
+// Transaction model sınıfı
 class _Tx {
   final String title;
   final String sub;
@@ -673,6 +647,7 @@ class _Tx {
   });
 }
 
+// Month grouping sınıfı
 class _MonthGroup {
   final String label;
   final List<_Tx> items;
