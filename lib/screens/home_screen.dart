@@ -1,9 +1,8 @@
-// lib/screens/home_screen.dart - Güncellenmiş tam sürüm
+// lib/screens/home_screen.dart - Güncellenmiş tam sürüm - BİRİNCİ KISIM
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-//saide selam
 
 import '../services/session_manager.dart';
 import '../providers/db_provider.dart';
@@ -11,6 +10,8 @@ import '../models/customer.dart';
 import '../models/account.dart';
 import '../models/debit_card.dart';
 import '../models/credit_card.dart';
+import '../models/transfer_history_item.dart';
+import '../models/transaction_item.dart';
 import 'login_screen.dart';
 import 'cards_screen.dart';
 
@@ -105,10 +106,39 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectPrimaryCards();
       }
 
+      // ÖNEMLİ: İşlem geçmişini yükle
+      await _loadTransactionHistory();
+
     } catch (e) {
       _error = e.toString();
     } finally {
       setState(() { _loading = false; });
+    }
+  }
+
+  // YENİ: İşlem geçmişi yükleme fonksiyonu
+  Future<void> _loadTransactionHistory() async {
+    final dbp = context.read<DbProvider>();
+    
+    if (_allAccounts.isNotEmpty) {
+      // Ana hesabı kullanarak transfer geçmişini yükle
+      final Account primaryAcc = _primaryAccount ?? _allAccounts.first;
+      final accountId = primaryAcc.accountId;
+      
+      if (accountId.isNotEmpty) {
+        try {
+          // Transfer geçmişini yükle (son 10 kayıt yeterli, UI'da 3 tanesini göstereceğiz)
+          await dbp.loadTransfersByAccount(accountId, limit: 10);
+          
+          // Varsa kart işlemlerini de yükle
+          if (dbp.selectedDebit != null || dbp.selectedCredit != null) {
+            await dbp.loadRecentTransactionsForSelection(limit: 10);
+          }
+        } catch (e) {
+          print('[HomeScreen] İşlem geçmişi yüklenirken hata: $e');
+          // Hata olsa da uygulamayı durdurma, sadece log'la
+        }
+      }
     }
   }
 
@@ -437,7 +467,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              _hideBalance ? "•••••••• ₺" : formattedBalance,
+                              _hideBalance ? "••••••••• ₺" : formattedBalance,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -472,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
+  }// home_screen.dart - İKİNCİ KISIM (devamı)
 
   Widget _buildEmptyCard() {
     return const Center(
@@ -601,64 +631,194 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // YENİ: Dinamik işlem önizleme fonksiyonu
   Widget _buildTransactionsPreview() {
-    final items = <_TxItem>[
-      _TxItem(icon: Icons.opacity, iconBg: const Color(0xFF5B6CFF), title: 'Su Faturası', sub: 'Başarısız', amount: -280, date: DateTime.now()),
-      _TxItem(icon: Icons.work, iconBg: const Color(0xFFFF5B8A), title: 'Maaş: Ekim', sub: 'Başarılı', amount: 1200, date: DateTime.now().subtract(const Duration(days: 1))),
-      _TxItem(icon: Icons.bolt, iconBg: const Color(0xFF28C2FF), title: 'Elektrik Faturası', sub: 'Başarılı', amount: -480, date: DateTime.now().subtract(const Duration(days: 1))),
-      _TxItem(icon: Icons.card_giftcard, iconBg: const Color(0xFFFFA726), title: 'Jane gönd.', sub: 'Gelir', amount: 500, date: DateTime.now().subtract(const Duration(days: 1))),
-      _TxItem(icon: Icons.wifi, iconBg: const Color(0xFF00C49A), title: 'İnternet', sub: 'Başarılı', amount: -100, date: DateTime.now().subtract(const Duration(days: 2))),
-    ];
+    return Consumer<DbProvider>(
+      builder: (context, dbp, child) {
+        // API'den gelen verileri birleştir
+        final allTransactions = _buildDynamicTransactionList(dbp);
+        
+        void goAll() {
+          try {
+            Navigator.pushNamed(context, '/transactions');
+          } catch (_) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('İşlemler ekranı henüz eklenmedi.')),
+            );
+          }
+        }
 
-    void goAll() {
-      try {
-        Navigator.pushNamed(context, '/transactions');
-      } catch (_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('İşlemler ekranı henüz eklenmedi.')),
-        );
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GestureDetector(
-        onTap: goAll,
-        child: Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.accent.withOpacity(.20), width: 1),
-            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-          child: Column(
-            children: [
-              // Header
-              Row(
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GestureDetector(
+            onTap: goAll,
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.accent.withOpacity(.20), width: 1),
+                boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+              child: Column(
                 children: [
-                  const Expanded(
-                    child: Text('Son İşlemler',
-                        style: TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w800, fontSize: 16)),
+                  // Header
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Son İşlemler',
+                            style: TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w800, fontSize: 16)),
+                      ),
+                      TextButton(
+                        onPressed: goAll,
+                        child: const Text('Tümünü gör', style: TextStyle(color: AppColors.textSub, fontWeight: FontWeight.w700)),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: goAll,
-                    child: const Text('Tümünü gör', style: TextStyle(color: AppColors.textSub, fontWeight: FontWeight.w700)),
-                  ),
+                  const SizedBox(height: 6),
+                  
+                  // Dinamik işlem listesi - SADECE 3 TANE
+                  if (allTransactions.isEmpty) ...[
+                    const SizedBox(height: 40),
+                    const Center(
+                      child: Text(
+                        'Henüz işlem bulunmuyor',
+                        style: TextStyle(color: AppColors.textSub, fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                  ] else ...[
+                    // Burada _buildDynamicTransactionItem kullanıyoruz, _buildTransactionItem değil
+                    ...allTransactions.take(3).map((txItem) => _buildDynamicTransactionItem(txItem)),
+                  ],
                 ],
               ),
-              const SizedBox(height: 6),
-              // Transaction list
-              ...items.take(3).map((t) => _buildTransactionItem(t)),
-            ],
+            ),
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  // YENİ: API verilerinden dinamik işlem listesi oluştur
+  List<_TxItem> _buildDynamicTransactionList(DbProvider dbp) {
+    final List<_TxItem> allTransactions = [];
+
+    try {
+      // 1. Transfer geçmişinden işlemler ekle
+      for (final transfer in dbp.transfers) {
+        final isIncome = transfer.direction == TransferDirection.IN;
+        final icon = isIncome ? Icons.call_received : Icons.call_made;
+        final iconBg = isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF5B8A);
+        
+        String title = transfer.title;
+        if (title.isEmpty || title == transfer.counterparty) {
+          title = isIncome ? 'Gelen Havale' : 'Giden Havale';
+        }
+        
+        String sub = 'Havale';
+        if (transfer.counterparty.isNotEmpty && transfer.counterparty != title) {
+          sub = 'Hesap: ${transfer.counterparty}';
+        }
+        
+        // Status mapping
+        String status = 'Başarılı';
+        final statusLower = transfer.status.toLowerCase();
+        if (statusLower.contains('pend') || statusLower.contains('process')) {
+          status = 'Bekliyor';
+        } else if (statusLower.contains('fail') || statusLower.contains('reject')) {
+          status = 'Başarısız';
+        }
+        
+        allTransactions.add(_TxItem(
+          icon: icon,
+          iconBg: iconBg,
+          title: title,
+          sub: status,
+          amount: (transfer.amount * (isIncome ? 1 : -1)).round(),
+          date: transfer.occurredAt,
+        ));
+      }
+
+      // 2. Kart işlemlerinden işlemler ekle
+      for (final txn in dbp.recentTransactions) {
+        final isIncome = txn.isIncome;
+        final icon = Icons.credit_card;
+        final iconBg = const Color(0xFF3B82F6);
+        
+        String title = txn.merchantName ?? txn.description ?? 'Kart İşlemi';
+        String sub = txn.category ?? 'Kart';
+        
+        // Status mapping
+        String status = 'Başarılı';
+        final statusText = (txn.status ?? '').toLowerCase();
+        if (statusText.contains('pend')) {
+          status = 'Bekliyor';
+        } else if (statusText.contains('fail') || statusText.contains('reject')) {
+          status = 'Başarısız';
+        }
+        
+        allTransactions.add(_TxItem(
+          icon: icon,
+          iconBg: iconBg,
+          title: title,
+          sub: status,
+          amount: (txn.amount * (isIncome ? 1 : -1)).round(),
+          date: txn.date ?? DateTime.now(),
+        ));
+      }
+
+      // 3. Tarihe göre sırala (en yeni önce)
+      allTransactions.sort((a, b) => b.date.compareTo(a.date));
+      
+    } catch (e) {
+      print('[HomeScreen] İşlem listesi oluşturulurken hata: $e');
+    }
+
+    return allTransactions;
+  }
+
+  // Bu fonksiyon home_screen_part3'te tanımlanmış durumda, burada tanımlamamıza gerek yok
+  // Widget _buildDynamicTransactionItem(_TxItem txItem) { ... }
+
+  Widget _buildTransactionItem(_TxItem transaction) {
+    final isIncome = transaction.amount >= 0;
+    final amountStr = (isIncome ? '+' : '-') + _formatTRY(transaction.amount.abs().toDouble()).replaceAll(' ₺', '');
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(color: transaction.iconBg, borderRadius: BorderRadius.circular(12)),
+            child: Icon(transaction.icon, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [// home_screen.dart - ÜÇÜNCÜ KISIM (devamı - son)
+
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$amountStr ₺',
+            style: TextStyle(
+              color: isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTransactionItem(_TxItem t) {
+  // YENİ: Dinamik işlem item'ı oluştur
+  Widget _buildDynamicTransactionItem(_TxItem t) {
     final isIncome = t.amount >= 0;
     final amountStr = (isIncome ? '+' : '-') + _formatTRY(t.amount.abs().toDouble()).replaceAll(' ₺', '');
     
@@ -847,9 +1007,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-
-
-Widget _buildLogoutButton() {
+  Widget _buildLogoutButton() {
     return GestureDetector(
       onTap: () async {
         HapticFeedback.selectionClick();
@@ -990,8 +1148,8 @@ Widget _buildLogoutButton() {
                         ),
                         padding: const EdgeInsets.all(14),
                         child: Image.asset( kIconCaptain,
-  width: 105,   // 🔹 görselin genişliği
-  height: 105,  // 🔹 görselin yüksekliği
+  width: 105,   
+  height: 105,  
   fit: BoxFit.contain,
   filterQuality: FilterQuality.high),
                       ),
@@ -1067,6 +1225,7 @@ Widget _buildLogoutButton() {
       Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
 }
 
+// YENİ: Güncellenmiş Transaction Item sınıfı
 class _TxItem {
   final IconData icon;
   final Color iconBg;
