@@ -13,6 +13,7 @@ import 'package:interbank/services/session_manager.dart';
 import 'package:interbank/widgets/chat_bubble.dart';
 import 'package:interbank/widgets/message_input.dart';
 import 'package:interbank/screens/no_connection_screen.dart';
+import 'dart:math' as math;
 
 class ChatScreen extends StatefulWidget {
   final String? initialSessionId;
@@ -94,9 +95,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollCtrl.dispose();
     _subscription.cancel();
     super.dispose();
-  }
-
-  @override
+  }@override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -184,9 +183,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _messages.add(
             ChatMessage.bot(
-              '⚠️ MCP Agent şu an erişilemiyor.\n\n'
-              'Kontrol listesi:\n'
-              '• MCP Agent (cloud): mcp-agent-api.azurewebsites.net',
+              '⚠️ Sistem geçici olarak erişilemiyor. Lütfen daha sonra tekrar deneyin.',
               badge: BotBadgeState.noConnection,
             ),
           );
@@ -194,10 +191,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       } else {
         if (_serviceHealth.mcpAgentAvailable && !_announcedMcpUp) {
           _announcedMcpUp = true;
-          setState(() {
-            print(
-                'MCP Agent bağlantısı başarılı, kullanıcı bilgilendiriliyor.');
-          });
+          // Bağlantı başarılı mesajı kaldırıldı
         }
       }
 
@@ -205,9 +199,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('⚠️ Service health check error: $e');
     }
-  }
-
-  // ---- Bağlantı Yönetimi ----
+  }// ---- Bağlantı Yönetimi ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
     if (_hasConnection == isConnected) return;
@@ -295,9 +287,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // çok kısa ve yönlendirme benzeri ifadeler
     if (hit && t.length < 120) return true;
     return false;
-  }
-
-  // ---- Mesaj Gönderimi ----
+  }// ---- Mesaj Gönderimi ----
   Future<void> _sendUserMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -324,7 +314,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.add(ChatMessage.user(trimmed));
         _messages.add(
           ChatMessage.bot(
-            '🔧 MCP Agent kullanılamıyor. Lütfen daha sonra yeniden deneyin.',
+            '🔧 Sistem şu anda kullanılamıyor. Lütfen daha sonra yeniden deneyin.',
             badge: BotBadgeState.noConnection,
           ),
         );
@@ -437,9 +427,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!_serviceHealth.anyServiceAvailable) return Colors.red;
     final up = _serviceHealth.mcpAgentAvailable;
     return up ? Colors.green : Colors.orange;
-  }
-
-  // ---- Oturum İşlemleri ----
+  }// ---- Oturum İşlemleri ----
   Future<void> _startNewSession() async {
     try {
       // Eski session'ı sonlandır ve yeni session başlat
@@ -566,9 +554,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // ---- Responsive Helper ----
   bool get _isLargeScreen => MediaQuery.of(context).size.width > 600;
-  bool get _isSmallScreen => MediaQuery.of(context).size.width < 400;
-
-  // ---- Build ----
+  bool get _isSmallScreen => MediaQuery.of(context).size.width < 400;// ---- Build ----
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).copyWith(
@@ -709,7 +695,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     SafeArea(
                       child: Column(
                         children: [
-                          // Servis durumu uyarı banner'ı (responsive)
+                          // Servis durumu uyarı banner'ı (responsive) - Kısaltıldı
                           if (!_serviceHealth.anyServiceAvailable)
                             Container(
                               width: double.infinity,
@@ -725,7 +711,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   SizedBox(width: _isSmallScreen ? 6 : 8),
                                   Expanded(
                                     child: Text(
-                                      'MCP Agent aktif değil.',
+                                      'Sistem geçici olarak erişilemiyor.',
                                       style: TextStyle(
                                         color: Colors.red,
                                         fontSize: _isSmallScreen ? 12 : 14,
@@ -736,40 +722,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     onPressed: _checkAllServicesHealth,
                                     child: Text(
                                       'Tekrar Dene',
-                                      style: TextStyle(
-                                        fontSize: _isSmallScreen ? 12 : 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else if (!_serviceHealth.mcpAgentAvailable)
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.all(_isSmallScreen ? 8 : 12),
-                              color: Colors.orange.shade100,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.warning,
-                                    color: Colors.orange,
-                                    size: _isSmallScreen ? 18 : 24,
-                                  ),
-                                  SizedBox(width: _isSmallScreen ? 6 : 8),
-                                  Expanded(
-                                    child: Text(
-                                      'MCP Agent erişilemiyor. Lütfen daha sonra deneyin.',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: _isSmallScreen ? 12 : 14,
-                                      ),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: _checkAllServicesHealth,
-                                    child: Text(
-                                      'Yenile',
                                       style: TextStyle(
                                         fontSize: _isSmallScreen ? 12 : 14,
                                       ),
@@ -836,7 +788,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 }
 
-// ---- Typing indicator (responsive) ----
+// ---- Hareketli 3 nokta typing indicator (responsive) ----
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
@@ -847,51 +799,114 @@ class _TypingIndicator extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        CircleAvatar(
-          radius: isSmallScreen ? 16 : 21,
-          backgroundColor: Colors.transparent,
-          backgroundImage:
-              const AssetImage('lib/assets/images/captain/captain_writing.png'),
+        // Kaptan icon'u - kare şeklinde
+        Container(
+          width: isSmallScreen ? 32 : 42,
+          height: isSmallScreen ? 32 : 42,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8), // Kare şeklinde
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'lib/assets/images/captain/captain_writing.png',
+              fit: BoxFit.cover,
+            ),
+          ),
         ),
         SizedBox(width: isSmallScreen ? 6 : 10),
-        const _TypingBubble(),
+        const _AnimatedDots(), // Hareketli 3 nokta
       ],
     );
   }
 }
 
-class _TypingBubble extends StatelessWidget {
-  const _TypingBubble();
+// Hareketli 3 nokta animasyonu
+class _AnimatedDots extends StatefulWidget {
+  const _AnimatedDots();
+
+  @override
+  State<_AnimatedDots> createState() => _AnimatedDotsState();
+}
+
+class _AnimatedDotsState extends State<_AnimatedDots>
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1400),
+      vsync: this,
+    );
+    _animation = Tween<double>(begin: 0, end: 1).animate(_controller);
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final isSmallScreen = MediaQuery.of(context).size.width < 400;
 
-    return DecoratedBox(
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x11000000),
+                blurRadius: 3,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 8 : 12,
+              vertical: isSmallScreen ? 5 : 7,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDot(0),
+                const SizedBox(width: 3),
+                _buildDot(1),
+                const SizedBox(width: 3),
+                _buildDot(2),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDot(int index) {
+    final progress = _animation.value;
+    final delay = index * 0.2;
+    final dotProgress = ((progress - delay) % 1.0).clamp(0.0, 1.0);
+    
+    final opacity = (math.sin(dotProgress * math.pi)).clamp(0.3, 1.0);
+    
+    return Container(
+      width: 6,
+      height: 6,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 3,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: isSmallScreen ? 8 : 12,
-          vertical: isSmallScreen ? 5 : 7,
-        ),
-        child: Text(
-          'Agent çalışıyor...',
-          style: TextStyle(
-            fontSize: isSmallScreen ? 12 : 14,
-            color: Colors.black87,
-          ),
-        ),
+        color: Colors.black87.withOpacity(opacity),
+        shape: BoxShape.circle,
       ),
     );
   }
 }
+
+// math import'u için:
