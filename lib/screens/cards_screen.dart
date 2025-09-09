@@ -1,4 +1,4 @@
-// lib/screens/cards_screen.dart - Güncellenmiş sürüm
+// lib/screens/cards_screen.dart - Güncellenmiş sürüm - PART 1
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -77,15 +77,36 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 
   Color _getAccountStatusColor(Account account) {
+    // Önce blok durumunu kontrol et - en yüksek öncelik
+    if (account.isBlocked == 1) return Colors.red;
+    
+    // Sonra status'u kontrol et
     if (account.status?.toLowerCase() == 'closed') return Colors.red;
     if (account.status?.toLowerCase() == 'frozen') return Colors.orange;
-    if (account.isBlocked == 1) return Colors.red;
+    
+    // Eğer ne blokeli ne kapalı ne donuk ise yeşil
     return Colors.green;
   }
 
+  String _getAccountStatusText(Account account) {
+    // Önce blok durumunu kontrol et - en yüksek öncelik
+    if (account.isBlocked == 1) return 'Blocked';
+    
+    // Sonra status'u kontrol et
+    if (account.status != null) return account.status!;
+    
+    // Varsayılan
+    return 'Active';
+  }
+
   Color _getCardStatusColor(bool? isActive, bool? isBlocked) {
+    // Önce blok durumunu kontrol et - en yüksek öncelik
     if (isBlocked == true) return Colors.red;
+    
+    // Sonra aktiflik durumunu kontrol et
     if (isActive != true) return Colors.orange;
+    
+    // Hem aktif hem blokeli değilse yeşil
     return Colors.green;
   }
 
@@ -134,7 +155,9 @@ class _CardsScreenState extends State<CardsScreen> {
         ),
       ),
     );
-  }Widget _buildHeader(BuildContext context) {
+  }
+
+  Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -307,7 +330,8 @@ class _CardsScreenState extends State<CardsScreen> {
                               ),
                             ),
                           ),
-                          if (account.status != null)
+                          // GÜNCELLEME: Status badge koşulu ve metni
+                          if (account.isBlocked == 1 || account.status != null)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
@@ -316,7 +340,7 @@ class _CardsScreenState extends State<CardsScreen> {
                                 border: Border.all(color: statusColor.withOpacity(.5)),
                               ),
                               child: Text(
-                                account.status!,
+                                _getAccountStatusText(account), // GÜNCELLEME: Yeni fonksiyon
                                 style: TextStyle(
                                   color: statusColor,
                                   fontSize: 10,
