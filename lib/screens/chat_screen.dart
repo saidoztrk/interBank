@@ -95,7 +95,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollCtrl.dispose();
     _subscription.cancel();
     super.dispose();
-  }@override
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -199,7 +201,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('⚠️ Service health check error: $e');
     }
-  }// ---- Bağlantı Yönetimi ----
+  }
+
+  // ---- Bağlantı Yönetimi ----
   void _updateConnectionStatus(List<ConnectivityResult> results) {
     final isConnected = results.any((r) => r != ConnectivityResult.none);
     if (_hasConnection == isConnected) return;
@@ -427,7 +431,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!_serviceHealth.anyServiceAvailable) return Colors.red;
     final up = _serviceHealth.mcpAgentAvailable;
     return up ? Colors.green : Colors.orange;
-  }// ---- Oturum İşlemleri ----
+  }
+
+  // ---- Oturum İşlemleri ----
   Future<void> _startNewSession() async {
     try {
       // Eski session'ı sonlandır ve yeni session başlat
@@ -438,7 +444,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages.add(
           ChatMessage.bot(
             '🆕 Yeni sohbet oturumu başlatıldı.\n\n'
-            '👋 Ben MAYDAY, sizin kişisel bankacılık asistanınızım. '
+            '👋 Ben MAYDAY, sizin kişisel bankacılık asistanım. '
             'Size nasıl yardımcı olabilirim?',
             badge: BotBadgeState.connection,
           ),
@@ -575,9 +581,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             icon: const Icon(Icons.arrow_back, color: Colors.grey),
             onPressed: () {
               if (Navigator.canPop(context)) {
-                Navigator.pop(context);
+                Navigator.pop(context, {'shouldRefresh': true});
               } else {
-                Navigator.pushReplacementNamed(context, '/home');
+                Navigator.pushReplacementNamed(context, '/home', arguments: {'shouldRefresh': true});
               }
             },
           ),
@@ -786,9 +792,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
     );
   }
-}
-
-// ---- Hareketli 3 nokta typing indicator (responsive) ----
+}// ---- Hareketli 3 nokta typing indicator (responsive) ----
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 

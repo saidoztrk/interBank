@@ -68,7 +68,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Precache navigation icons
+    
+    // Route arguments'ı kontrol et
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if (args?['shouldRefresh'] == true) {
+      // Home ekranını yenile
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadUserData();
+      });
+    }
+    
+    // Precache navigation icons (mevcut kod)
     for (final asset in [
       kIconHome,
       kIconApps,
@@ -80,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // YENİ: Home ekranına her girişte işlem geçmişini yeniden yükle
   Future<void> _loadUserData() async {
     setState(() {
       _loading = true;
@@ -115,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectPrimaryCards();
       }
 
-      // ÖNEMLİ: İşlem geçmişini yükle
+      // ÖNEMLİ: Her home ekranı açıldığında işlem geçmişini yeniden yükle
       await _loadTransactionHistory();
     } catch (e) {
       _error = e.toString();
@@ -126,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // YENİ: İşlem geçmişi yükleme fonksiyonu
+  // YENİ: İşlem geçmişi yükleme fonksiyonu - her home girişte çağrılır
   Future<void> _loadTransactionHistory() async {
     final dbp = context.read<DbProvider>();
 
@@ -248,7 +259,22 @@ class _HomeScreenState extends State<HomeScreen> {
         );
   }
 
-  String _formatTRY(double value) {
+  // YENİ: Döviz simgesi döndüren fonksiyon
+  String _getCurrencySymbol(String currency) {
+    switch (currency.toUpperCase()) {
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'TRY':
+      case 'TL':
+        return '₺';
+      default:
+        return '₺'; // Default olarak TL simgesi
+    }
+  }
+
+  String _formatCurrency(double value, String currency) {
     final parts = value.toStringAsFixed(2).split('.');
     String intPart = parts[0];
     final decPart = parts[1];
@@ -262,7 +288,11 @@ class _HomeScreenState extends State<HomeScreen> {
         buffer.write('.');
       }
     }
-    return '${buffer.toString()},$decPart ₺';
+    return '${buffer.toString()},$decPart ${_getCurrencySymbol(currency)}';
+  }
+
+  String _formatTRY(double value) {
+    return _formatCurrency(value, 'TRY');
   }
 
   String _getAccountStatusColor() {
@@ -302,6 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String displayName = _customer?.fullName ?? 'Müşteri';
     String? statusText;
     String? ibanText;
+    String currency = 'TRY'; // YENİ: Para birimi takibi
 
     if (_selectedCardInfo != null && _selectedCardInfo!['type'] == 'credit') {
       // Credit card selected
@@ -312,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         if (_primaryCreditCard!.isBlocked == true) {
           statusColor = 'error';
-          statusText = 'BLOKLU';
+          statusText = 'Blocked'; // DEĞİŞİKLİK: Active -> Blocked
         } else if (_primaryCreditCard!.isActive != true) {
           statusColor = 'warning';
           statusText = 'PASIF';
@@ -322,22 +353,30 @@ class _HomeScreenState extends State<HomeScreen> {
       // Account or debit card selected (or default)
       if (_primaryAccount != null) {
         balance = _primaryAccount!.balance;
+        currency = _primaryAccount!.currency; // YENİ: Para birimi al
         statusColor = _getAccountStatusColor();
         cardType = '${_primaryAccount!.type} ${_primaryAccount!.currency}';
         ibanText = _primaryAccount!.iban;
-        statusText = _primaryAccount!.status;
+        
+        // DEĞİŞİKLİK: Blokeli hesaplar için "Blocked" göster
+        if (_primaryAccount!.isBlocked == 1) {
+          statusText = 'Blocked';
+        } else {
+          statusText = _primaryAccount!.status;
+        }
 
         if (_primaryDebitCard != null) {
           cardBrand = _primaryDebitCard!.cardBrand ?? 'BANK';
           if (_primaryDebitCard!.isBlocked == true) {
             statusColor = 'error';
-            statusText = 'BLOKLU';
+            statusText = 'Blocked'; // DEĞİŞİKLİK: Active -> Blocked
           }
         }
       }
     }
 
-    final formattedBalance = _formatTRY(balance);
+    // YENİ: Döviz simgesi ile formatlanmış bakiye
+    final formattedBalance = _formatCurrency(balance, currency);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -497,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              _hideBalance ? "••••••••• ₺" : formattedBalance,
+                              _hideBalance ? "•••••••••" : formattedBalance,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -533,7 +572,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  } // home_screen.dart - İKİNCİ KISIM (devamı)
+  }
 
   Widget _buildEmptyCard() {
     return const Center(
@@ -586,6 +625,21 @@ class _HomeScreenState extends State<HomeScreen> {
     else if (account.status?.toLowerCase() == 'frozen')
       statusColor = AppColors.warning;
 
+    // YENİ: Döviz hesapları için ikon seçimi
+    IconData accountIcon;
+    switch (account.currency.toUpperCase()) {
+      case 'USD':
+        accountIcon = Icons.attach_money; // Dollar simgesi ikonu
+        break;
+      case 'EUR':
+        accountIcon = Icons.euro; // Euro simgesi ikonu
+        break;
+      default:
+        accountIcon = account.type.toLowerCase().contains('kredi')
+            ? Icons.credit_card
+            : Icons.account_balance_wallet;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -603,9 +657,7 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              account.type.toLowerCase().contains('kredi')
-                  ? Icons.credit_card
-                  : Icons.account_balance_wallet,
+              accountIcon, // YENİ: Dinamik ikon
               color: statusColor,
               size: 20,
             ),
@@ -642,7 +694,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      account.status!,
+                      // DEĞİŞİKLİK: Blokeli hesaplar için "Blocked" göster
+                      isBlocked ? 'Blocked' : (account.status ?? 'Active'),
                       style: TextStyle(
                         color: statusColor,
                         fontSize: 10,
@@ -655,7 +708,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Text(
-            _formatTRY(account.balance),
+            // YENİ: Döviz simgesiyle formatlanmış bakiye
+            _formatCurrency(account.balance, account.currency),
             style: TextStyle(
               color: account.balance >= 0 ? AppColors.success : AppColors.error,
               fontWeight: FontWeight.w800,
@@ -832,49 +886,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return allTransactions;
   }
 
-  // Bu fonksiyon home_screen_part3'te tanımlanmış durumda, burada tanımlamamıza gerek yok
-  // Widget _buildDynamicTransactionItem(_TxItem txItem) { ... }
-
-  Widget _buildTransactionItem(_TxItem transaction) {
-    final isIncome = transaction.amount >= 0;
-    final amountStr = (isIncome ? '+' : '-') +
-        _formatTRY(transaction.amount.abs().toDouble()).replaceAll(' ₺', '');
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-                color: transaction.iconBg,
-                borderRadius: BorderRadius.circular(12)),
-            child: Icon(transaction.icon, color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // home_screen.dart - ÜÇÜNCÜ KISIM (devamı - son)
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$amountStr ₺',
-            style: TextStyle(
-              color:
-                  isIncome ? const Color(0xFF22C55E) : const Color(0xFFFF4D67),
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // YENİ: Dinamik işlem item'ı oluştur
   Widget _buildDynamicTransactionItem(_TxItem t) {
     final isIncome = t.amount >= 0;
@@ -925,6 +936,26 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // YENİ: Chat ekranına git ve sonucu bekle
+  Future<void> _handleChatReturn() async {
+  HapticFeedback.selectionClick();
+  try {
+    final result = await Navigator.pushNamed(context, '/chat');
+    
+    print('[HomeScreen] Chat return result: $result');
+    
+    // Her durumda veriyi yenile (result kontrolü kaldırıldı)
+    await _loadUserData();
+    
+    print('[HomeScreen] Data reloaded after chat return');
+    
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Hata: $e')),
+    );
+  }
+}
 
   Future<void> _openCards() async {
     // Open cards page
@@ -1229,10 +1260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.pushNamed(context, '/chat');
-                      },
+                      onTap: _handleChatReturn, // YENİ: Chat return handler
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         width: 86,
